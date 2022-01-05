@@ -22,7 +22,10 @@ class full_shape_spectra(Likelihood_prior):
 
                 # Pre-load useful quantities for bispectra
                 if self.use_B: 
-                        self.bk_utils = BkUtils()        
+                        self.bk_utils = BkUtils() 
+
+                # Define nuisance parameter mean and variances
+                prior_bGamma3 = lambda b1: (23.*(b1-1.)/42., 0.)      
                 
         def loglkl(self, cosmo, data):
                 """Compute the log-likelihood for a given set of cosmological and nuisance parameters. Note that this marginalizes over nuisance parameters that enter the model linearly."""
@@ -47,21 +50,26 @@ class full_shape_spectra(Likelihood_prior):
                 b1 = 1.8682
                 print(b1)
 
-                ## Define parameter mean and variances    
+                ## Define parameter mean and variances   
+                
+                mean_bGamma3, std_bGamma3 = self.prior_bGamma3(b1)
+
+                print("HERE!")
+                # 
+                #  
                 psh = 3500. # scale for stochastic parameters    
                 # Means
                 mean_bGamma3 = 23.*(b1-1.)/42.
                 Pshot = 0.
                 Bshot = 1.
-                c1 = 0.
-                a0 = 0.
-                a2 = 0.
+                mean_c1 = 0.
+                mean_a0 = 0.
+                mean_a2 = 0.
                 mean_cs0 = 0.
                 mean_cs2 = 30.
                 mean_cs4 = 0.
                 mean_b4 = 500.
                 # Standard deviations
-                std_bGamma3 = 0.
                 std_Pshot = 1.*psh
                 std_Bshot = 1.*psh
                 std_c1 = 5.
@@ -74,7 +82,7 @@ class full_shape_spectra(Likelihood_prior):
                 
                 # Define local variables 
                 dataset = self.dataset
-                nP, nQ, nPQ, nB, nAP = dataset.nP, dataset.nQ, dataset.nPQ, dataset.nB, dataset.nAP
+                nP, nQ, nB, nAP = dataset.nP, dataset.nQ, dataset.nB, dataset.nAP
                 
                 z = self.z
                 fz = cosmo.scale_independent_growth_factor_f(z)
@@ -105,7 +113,7 @@ class full_shape_spectra(Likelihood_prior):
                         pk_theory = PkTheory(self, all_theory, h, norm, fz, k_grid, dataset.kPQ, nP, nQ)
                         
                         # Compute theory model for Pl and add to (theory - data)
-                        P0, P2, P4 = pk_theory.compute_Pl_oneloop(b1, b2, bG2, mean_bGamma3, mean_cs0, mean_cs2, mean_cs4, mean_b4, a0, a2, psh, Pshot)
+                        P0, P2, P4 = pk_theory.compute_Pl_oneloop(b1, b2, bG2, mean_bGamma3, mean_cs0, mean_cs2, mean_cs4, mean_b4, mean_a0, mean_a2, psh, Pshot)
                         theory_minus_data[0*nP:1*nP] = P0 - dataset.P0
                         theory_minus_data[1*nP:2*nP] = P2 - dataset.P2
                         theory_minus_data[2*nP:3*nP] = P4 - dataset.P4
@@ -127,7 +135,7 @@ class full_shape_spectra(Likelihood_prior):
                 if self.use_Q:
                         
                         # Compute theoretical Q0 model and add to (theory - data)
-                        Q0 = pk_theory.compute_Q0_oneloop(b1, b2, bG2, mean_bGamma3, mean_cs0, mean_cs2, mean_cs4, mean_b4, a0, a2, psh, Pshot)
+                        Q0 = pk_theory.compute_Q0_oneloop(b1, b2, bG2, mean_bGamma3, mean_cs0, mean_cs2, mean_cs4, mean_b4, mean_a0, mean_a2, psh, Pshot)
                         theory_minus_data[3*nP:3*nP+nQ] = Q0 - dataset.Q0
 
                         # Compute derivatives of Q0 with respect to parameters
@@ -165,7 +173,6 @@ class full_shape_spectra(Likelihood_prior):
                         c0 = 0.
                         c2 = 0.
                         beta = fz/b1
-                        a0 = 1. + 2.*beta/3. + beta**2./5.
                         Plintab = -1.*norm**2.*(all_theory[10]/h**2./k_grid**2)*h**3
                         P2 = norm**2.*(all_theory[14])*h**3.
 
@@ -189,7 +196,7 @@ class full_shape_spectra(Likelihood_prior):
                         deltaSigma2 = integrate.quad(lambda k: (4*np.pi)*exp(1.*k)*P0int(exp(k))*(self.bk_utils.j2(exp(k)*r_bao))/((2*np.pi)**3.), log(2.e-4), log(ks_IR))[0]
                         
                         # IR resummed spectra
-                        P_IR = lambda k, mu: Pnwfunc(k) +  np.exp(-k**2.*(Sigma2*(1.+2.*fz*mu**2.*(2.+fz)) + deltaSigma2*mu**2.*fz**2.*(mu**2.-1.)))*Pwfunc(k) -(c0+c1*mu**2.+c2*mu**4.)*(k/0.3)**2.*P0int(k)/(b1+fz*mu**2.)
+                        P_IR = lambda k, mu: Pnwfunc(k) +  np.exp(-k**2.*(Sigma2*(1.+2.*fz*mu**2.*(2.+fz)) + deltaSigma2*mu**2.*fz**2.*(mu**2.-1.)))*Pwfunc(k) -(c0+mean_c1*mu**2.+c2*mu**4.)*(k/0.3)**2.*P0int(k)/(b1+fz*mu**2.)
                         P_IRC = lambda k, mu:Pnwfunc(k) +  np.exp(-k**2.*(Sigma2*(1.+2.*fz*mu**2.*(2.+fz)) + deltaSigma2*mu**2.*fz**2.*(mu**2.-1.)))*Pwfunc(k) -(mu**2.)*(k/0.3)**2.*P0int(k)/(b1+fz*mu**2.)
 
                         kmsMpc = 3.33564095198145e-6 # conversion factor
@@ -287,16 +294,16 @@ class full_shape_spectra(Likelihood_prior):
                                 B0[j] = np.matmul(np.matmul(np.matmul(np.matmul(np.matmul(B_matrix1,self.bk_utils.gauss_w2)/2.,self.bk_utils.gauss_w2)/2.,self.bk_utils.gauss_w),self.bk_utils.gauss_w),self.bk_utils.gauss_w)/Nk123
 
                                 # Add to output array
-                                theory_minus_data[3*nP + nQ + j] = B0[j]*dataset.discreteness_weights[j] - dataset.B0[j]
+                                theory_minus_data[3*nP+nQ+j] = B0[j]*dataset.discreteness_weights[j] - dataset.B0[j]
                                 
                                 # Update nuisance parameter covariance
                                 derivB_Pshot = np.matmul(np.matmul(np.matmul(np.matmul(np.matmul(B_matrix3,self.bk_utils.gauss_w2)/2.,self.bk_utils.gauss_w2)/2.,self.bk_utils.gauss_w),self.bk_utils.gauss_w),self.bk_utils.gauss_w)/Nk123
                                 derivB_Bshot = np.matmul(np.matmul(np.matmul(np.matmul(np.matmul(B_matrix2,self.bk_utils.gauss_w2)/2.,self.bk_utils.gauss_w2)/2.,self.bk_utils.gauss_w),self.bk_utils.gauss_w),self.bk_utils.gauss_w)/Nk123
                                 derivB_c1 = np.matmul(np.matmul(np.matmul(np.matmul(np.matmul(B_matrix4,self.bk_utils.gauss_w2)/2.,self.bk_utils.gauss_w2)/2.,self.bk_utils.gauss_w),self.bk_utils.gauss_w),self.bk_utils.gauss_w)/Nk123
 
-                                deriv_Pshot[3*nP + nQ + j] = derivB_Pshot
-                                deriv_Bshot[3*nP + nQ + j] = derivB_Bshot		
-                                deriv_c1[3*nP + nQ + j] = derivB_c1
+                                deriv_Pshot[3*nP+nQ+j] = derivB_Pshot
+                                deriv_Bshot[3*nP+nQ+j] = derivB_Bshot		
+                                deriv_c1[3*nP+nQ+j] = derivB_c1
 
                 ### COMBINE AND COMPUTE LIKELIHOOD
 
@@ -307,9 +314,9 @@ class full_shape_spectra(Likelihood_prior):
                 chi2 = np.inner(theory_minus_data,np.inner(np.linalg.inv(marg_cov),theory_minus_data))
                 
                 # Correct normalizations
-                chi2 +=np.linalg.slogdet(marg_cov)[1] - dataset.logdetcov
+                chi2 += np.linalg.slogdet(marg_cov)[1] - dataset.logdetcov
                 
                 # Add parameter priors
-                chi2 += (Pshot-0.)**2./1.**2. + (Bshot-1.)**2. + (c1-0.)**2./5.**2. + (b2-0.)**2./1.**2. + (bG2-0.)**2./1.**2.
+                chi2 += (Pshot-0.)**2./1.**2. + (Bshot-1.)**2. + (mean_c1-0.)**2./5.**2. + (b2-0.)**2./1.**2. + (bG2-0.)**2./1.**2.
                 
                 return -0.5*chi2

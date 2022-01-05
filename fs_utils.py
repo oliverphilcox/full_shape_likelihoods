@@ -267,7 +267,6 @@ class PkTheory(object):
             return deriv_bGamma3Q, deriv_cs0Q, deriv_cs2Q, deriv_cs4Q, deriv_b4Q, deriv_PshotQ, deriv_a0Q, deriv_a2Q
 
 
-
 class BkUtils(object):
         def __init__(self):
                 """Load a number of utility functions for the bispectrum likelihood computation"""
