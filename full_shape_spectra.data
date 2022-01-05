@@ -1,5 +1,5 @@
 # Nuisance parameters and sample
-full_shape_spectra.use_nuisance =['b^{(3)}_1','b^{(3)}_2','b^{(3)}_{G_2}','f_{NL}']
+full_shape_spectra.use_nuisance =['b^{(3)}_1','b^{(3)}_2','b^{(3)}_{G_2}','f_{NL}','f^{(2)}_{NL}']
 full_shape_spectra.z = 0.38
 
 # Approximate 1/nbar of survey

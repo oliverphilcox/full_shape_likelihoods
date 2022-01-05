@@ -2,7 +2,6 @@ import numpy as np
 from montepython.likelihood_class import Likelihood_prior
 from scipy import interpolate
 import scipy.integrate as integrate
-from numpy import log, exp, sin, cos
 from fs_utils import Datasets, BkUtils, PkTheory
 
 class full_shape_spectra(Likelihood_prior):
@@ -33,15 +32,17 @@ class full_shape_spectra(Likelihood_prior):
                 self.prior_c1 = 0., 5.
                 self.prior_a0 = 0., self.inv_nbar
                 self.prior_a2 = 0., self.inv_nbar
+                self.prior_bphi = 1., 5.
                 
         def loglkl(self, cosmo, data):
                 """Compute the log-likelihood for a given set of cosmological and nuisance parameters. Note that this marginalizes over nuisance parameters that enter the model linearly."""
 
                 # Load cosmological parameters
                 h = cosmo.h()
+                As = cosmo.A_s()
                 norm = 1. # (A_s/A_s_fid)^{1/2}
-                fNL = (data.mcmc_parameters['f_{NL}']['current'] *
-                        data.mcmc_parameters['f_{NL}']['scale'])
+                fNL = (data.mcmc_parameters['f_{NL}']['current'] * data.mcmc_parameters['f_{NL}']['scale'])
+                fNL2 = (data.mcmc_parameters['f^{(2)}_{NL}']['current'] * data.mcmc_parameters['f^{(2)}_{NL}']['scale'])
                 
                 # Load non-linear nuisance parameters
                 i_s=repr(3)
@@ -58,7 +59,6 @@ class full_shape_spectra(Likelihood_prior):
                 print(b1)
 
                 ## Define parameter mean and variances   
-                
                 mean_bGamma3, std_bGamma3 = self.prior_bGamma3(b1)
                 mean_cs0, std_cs0 = self.prior_cs0
                 mean_cs2, std_cs2 = self.prior_cs2
@@ -68,7 +68,6 @@ class full_shape_spectra(Likelihood_prior):
                 mean_a0, std_a0 = self.prior_a0
                 mean_a2, std_a2 = self.prior_a2
 
-                print("HERE!")
                 # Means
                 Pshot = 0.
                 Bshot = 1.
@@ -88,13 +87,13 @@ class full_shape_spectra(Likelihood_prior):
                         DA_th = cosmo.angular_distance(z)
                         rs_th = cosmo.rs_drag()
                         Hz_th = cosmo.Hubble(z)
-                
+
                 # Create output arrays
                 theory_minus_data = np.zeros(3*nP+nB+nQ+nAP)
-                deriv_bGamma3, deriv_Pshot, deriv_Bshot, deriv_c1, deriv_a0, deriv_a2, deriv_cs0, deriv_cs2, deriv_cs4, deriv_b4 = [np.zeros(3*nP+nB+nQ+nAP) for _ in range(10)]
+                deriv_bGamma3, deriv_Pshot, deriv_Bshot, deriv_c1, deriv_a0, deriv_a2, deriv_cs0, deriv_cs2, deriv_cs4, deriv_b4, deriv_bphi = [np.zeros(3*nP+nB+nQ+nAP) for _ in range(11)]
 
                 if self.bin_integration_P:
-                        k_grid = np.linspace(log(1.e-4),log(max(dataset.kPQ)+0.01),100)
+                        k_grid = np.linspace(np.log(1.e-4),np.log(max(dataset.kPQ)+0.01),100)
                         k_grid = np.exp(k_grid)
                 else:
                         k_grid = dataset.kPQ
@@ -102,20 +101,27 @@ class full_shape_spectra(Likelihood_prior):
                 # Run CLASS-PT
                 all_theory = cosmo.get_pk_mult(k_grid*h,z,len(k_grid))
 
+                ## fNL utilities
+                Plintab = -1.*norm**2.*(all_theory[10]/h**2./k_grid**2)*h**3
+                P0int = interpolate.InterpolatedUnivariateSpline(k_grid,Plintab,ext=3)
+
+                Azeta = As*2.*np.pi**2.
+                Tfunc = lambda k: (P0int(k)/(Azeta*((k*h/0.05)**(cosmo.n_s()-1.))/k**3.))**0.5
+                
                 #### Pk
                 if self.use_P:
 
                         # Define PkTheory class, used to compute power spectra and derivatives
-                        pk_theory = PkTheory(self, all_theory, h, norm, fz, k_grid, dataset.kPQ, nP, nQ)
+                        pk_theory = PkTheory(self, all_theory, h, As, fNL, fNL2, norm, fz, k_grid, dataset.kPQ, nP, nQ, Tfunc(k_grid))
                         
                         # Compute theory model for Pl and add to (theory - data)
-                        P0, P2, P4 = pk_theory.compute_Pl_oneloop(b1, b2, bG2, mean_bGamma3, mean_cs0, mean_cs2, mean_cs4, mean_b4, mean_a0, mean_a2, self.inv_nbar, Pshot)
+                        P0, P2, P4 = pk_theory.compute_Pl_oneloop(b1, b2, bG2, mean_bGamma3, mean_cs0, mean_cs2, mean_cs4, mean_b4, mean_a0, mean_a2, self.inv_nbar, Pshot, bphi)
                         theory_minus_data[0*nP:1*nP] = P0 - dataset.P0
                         theory_minus_data[1*nP:2*nP] = P2 - dataset.P2
                         theory_minus_data[2*nP:3*nP] = P4 - dataset.P4
 
                         # Compute derivatives of Pl with respect to parameters
-                        deriv_bGamma3P, deriv_cs0P, deriv_cs2P, deriv_cs4P, deriv_b4P, deriv_PshotP, deriv_a0P, deriv_a2P = pk_theory.compute_Pl_derivatives(b1)
+                        deriv_bGamma3P, deriv_cs0P, deriv_cs2P, deriv_cs4P, deriv_b4P, deriv_PshotP, deriv_a0P, deriv_a2P, deriv_bphiP = pk_theory.compute_Pl_derivatives(b1)
                         
                         # Add to joint derivative vector
                         deriv_bGamma3[:3*nP] = deriv_bGamma3P
@@ -126,16 +132,17 @@ class full_shape_spectra(Likelihood_prior):
                         deriv_Pshot[:3*nP] = deriv_PshotP
                         deriv_a0[:3*nP] = deriv_a0P
                         deriv_a2[:3*nP] = deriv_a2P
+                        deriv_bphi[:3*nP] = deriv_bphiP
                         
                 #### Q0
                 if self.use_Q:
                         
                         # Compute theoretical Q0 model and add to (theory - data)
-                        Q0 = pk_theory.compute_Q0_oneloop(b1, b2, bG2, mean_bGamma3, mean_cs0, mean_cs2, mean_cs4, mean_b4, mean_a0, mean_a2, self.inv_nbar, Pshot)
+                        Q0 = pk_theory.compute_Q0_oneloop(b1, b2, bG2, mean_bGamma3, mean_cs0, mean_cs2, mean_cs4, mean_b4, mean_a0, mean_a2, self.inv_nbar, Pshot, bphi)
                         theory_minus_data[3*nP:3*nP+nQ] = Q0 - dataset.Q0
 
                         # Compute derivatives of Q0 with respect to parameters
-                        deriv_bGamma3Q, deriv_cs0Q, deriv_cs2Q, deriv_cs4Q, deriv_b4Q, deriv_PshotQ, deriv_a0Q, deriv_a2Q = pk_theory.compute_Q0_derivatives(b1)
+                        deriv_bGamma3Q, deriv_cs0Q, deriv_cs2Q, deriv_cs4Q, deriv_b4Q, deriv_PshotQ, deriv_a0Q, deriv_a2Q, deriv_bphiQ = pk_theory.compute_Q0_derivatives(b1)
 
                         # Add to joint derivative vector
                         deriv_bGamma3[3*nP:3*nP+nQ] = deriv_bGamma3Q
@@ -146,6 +153,7 @@ class full_shape_spectra(Likelihood_prior):
                         deriv_Pshot[3*nP:3*nP+nQ] = deriv_PshotQ
                         deriv_a0[3*nP:3*nP+nQ] = deriv_a0Q
                         deriv_a2[3*nP:3*nP+nQ] = deriv_a2Q
+                        deriv_bphi[3*nP:3*nP+nQ] = deriv_bphiQ
 
                 #### AP
                 if self.use_AP:  
@@ -158,7 +166,9 @@ class full_shape_spectra(Likelihood_prior):
 
                 print("TODO: sort out 1/nbar")
                 print("TODO: add Bk module")
-                print("TODO: sort Pk/Bk")
+                print("TODO: sort Pk/Bk shot")
+                print("TODO: what is fNL / fNL2?")
+                print("only include bphi if using fNL?")
 
                 #### Bispectrum
                 if self.use_B:
@@ -170,12 +180,9 @@ class full_shape_spectra(Likelihood_prior):
                 
                         ### MESSY BELOW HERE!!
                         Ashot = 0.
-                        c0 = 0.
-                        c2 = 0.
                         beta = fz/b1
-                        Plintab = -1.*norm**2.*(all_theory[10]/h**2./k_grid**2)*h**3
-                        P2 = norm**2.*(all_theory[14])*h**3.
 
+                        P2 = norm**2.*(all_theory[14])*h**3.
                         ng = (1.+Ashot)/self.inv_nbar
 
                         # IR resummation parameters
@@ -183,20 +190,25 @@ class full_shape_spectra(Likelihood_prior):
                         ks_IR = 0.05
 
                         P0int = interpolate.InterpolatedUnivariateSpline(k_grid,Plintab,ext=3)
-                        Sigma = integrate.quad(lambda k: (4*np.pi)*exp(1.*k)*P0int(exp(k))*(1.-3*(2*r_bao*exp(k)*cos(exp(k)*r_bao)+(-2+r_bao**2*exp(k)**2)*sin(r_bao*exp(k)))/(exp(k)*r_bao)**3)/(3*(2*np.pi)**3.), log(2.e-4), log(0.2))[0]
-                        
+                        Sigma = integrate.quad(lambda k: (4*np.pi)*np.exp(1.*k)*P0int(np.exp(k))*(1.-3*(2*r_bao*np.exp(k)*np.cos(np.exp(k)*r_bao)+(-2+r_bao**2*np.exp(k)**2)*np.sin(r_bao*np.exp(k)))/(np.exp(k)*r_bao)**3)/(3*(2*np.pi)**3.), np.log(2.e-4), np.log(0.2))[0]
+        
                         # Wiggly power spectrum
                         Pw = (Plintab-P2)/(np.exp(-k_grid**2.*Sigma)-np.exp(-k_grid**2.*Sigma)*(1+k_grid**2.*Sigma))
                         Pwfunc = interpolate.InterpolatedUnivariateSpline(k_grid,Pw,ext=3)
+                        
                         # Non-Wiggly power spectrum
                         Pnw = Plintab - Pw*np.exp(-k_grid**2.*Sigma)
                         Pnwfunc = interpolate.InterpolatedUnivariateSpline(k_grid,Pnw,ext=3)
 
-                        Sigma2 = integrate.quad(lambda k: (4*np.pi)*exp(1.*k)*P0int(exp(k))*(1.-3*(2*r_bao*exp(k)*cos(exp(k)*r_bao)+(-2+r_bao**2*exp(k)**2)*sin(r_bao*exp(k)))/(exp(k)*r_bao)**3)/(3*(2*np.pi)**3.), log(2.e-4), log(ks_IR))[0]
-                        deltaSigma2 = integrate.quad(lambda k: (4*np.pi)*exp(1.*k)*P0int(exp(k))*(self.bk_utils.j2(exp(k)*r_bao))/((2*np.pi)**3.), log(2.e-4), log(ks_IR))[0]
-                        
+                        Sigma2 = integrate.quad(lambda k: (4*np.pi)*np.exp(1.*k)*P0int(np.exp(k))*(1.-3*(2*r_bao*np.exp(k)*np.cos(np.exp(k)*r_bao)+(-2+r_bao**2*np.exp(k)**2)*np.sin(r_bao*np.exp(k)))/(np.exp(k)*r_bao)**3)/(3*(2*np.pi)**3.), np.log(2.e-4), np.log(ks_IR))[0]
+                        deltaSigma2 = integrate.quad(lambda k: (4*np.pi)*np.exp(1.*k)*P0int(np.exp(k))*(self.bk_utils.j2(np.exp(k)*r_bao))/((2*np.pi)**3.), np.log(2.e-4), np.log(ks_IR))[0]
+
                         # IR resummed spectra
-                        P_IR = lambda k, mu: Pnwfunc(k) +  np.exp(-k**2.*(Sigma2*(1.+2.*fz*mu**2.*(2.+fz)) + deltaSigma2*mu**2.*fz**2.*(mu**2.-1.)))*Pwfunc(k) -(c0+mean_c1*mu**2.+c2*mu**4.)*(k/0.3)**2.*P0int(k)/(b1+fz*mu**2.)
+                        P_IR = lambda k, mu: Pnwfunc(k) +  np.exp(-k**2.*(Sigma2*(1.+2.*fz*mu**2.*(2.+fz)) + deltaSigma2*mu**2.*fz**2.*(mu**2.-1.)))*Pwfunc(k) -(mean_c1*mu**2.)*(k/0.3)**2.*P0int(k)/(b1+fz*mu**2.)
+                        P_IRC = lambda k, mu:Pnwfunc(k) +  np.exp(-k**2.*(Sigma2*(1.+2.*fz*mu**2.*(2.+fz)) + deltaSigma2*mu**2.*fz**2.*(mu**2.-1.)))*Pwfunc(k) -(mu**2.)*(k/0.3)**2.*P0int(k)/(b1+fz*mu**2.)
+
+                        # IR resummed spectra
+                        P_IR = lambda k, mu: Pnwfunc(k) +  np.exp(-k**2.*(Sigma2*(1.+2.*fz*mu**2.*(2.+fz)) + deltaSigma2*mu**2.*fz**2.*(mu**2.-1.)))*Pwfunc(k) -(mean_c1*mu**2.)*(k/0.3)**2.*P0int(k)/(b1+fz*mu**2.)
                         P_IRC = lambda k, mu:Pnwfunc(k) +  np.exp(-k**2.*(Sigma2*(1.+2.*fz*mu**2.*(2.+fz)) + deltaSigma2*mu**2.*fz**2.*(mu**2.-1.)))*Pwfunc(k) -(mu**2.)*(k/0.3)**2.*P0int(k)/(b1+fz*mu**2.)
 
                         kmsMpc = 3.33564095198145e-6 # conversion factor
@@ -210,7 +222,7 @@ class full_shape_spectra(Likelihood_prior):
                         B0 = np.zeros(nB)
                         new_triag = dataset.new_triag
 
-                        Azeta = cosmo.A_s()*2.*np.pi**2.
+                        Azeta = As*2.*np.pi**2.
 
                         def B_matrices(k1,k2,k3,mu1,phi,kc1=0,kc2=0,kc3=0,apar=1,aperp=1):
                                 ddk1 = dk1/2.
@@ -224,8 +236,18 @@ class full_shape_spectra(Likelihood_prior):
                                 mu2 = xxfunc*mu1 - np.sqrt(1.-mu1**2.)*yyfunc*np.cos(phi*2.*np.pi)
                                 mu3 = -(kk2/kk3)*mu2-(kk1/kk3)*mu1
 
-                                Tfunc = lambda k: (P0int(k)/(Azeta*((k/0.05)**(cosmo.n_s()-1.))/k**3.))**0.5
                                 BNG = lambda k1, k2, k3: Azeta**2.*(Tfunc(k1)*Tfunc(k2)*Tfunc(k3)*(18./5.)*(-1./k1**3./k2**3.-1./k3**3./k2**3.-1./k1**3./k3**3.-2./k1**2./k2**2./k3**2.+1/k1/k2**2./k3**3.+1/k1/k3**2./k2**3.+1/k2/k3**2./k1**3.+1/k2/k1**2./k3**3.+1/k3/k1**2./k2**3.+1/k3/k2**2./k1**3.))
+
+                                def BNG2(k1, k2, k3):
+                                        phere=27./(743./(7.*(20.*np.pi**2.-193.))-21.);
+                                        kt=k1+k2+k3;
+                                        e2=k1*k2+k1*k3+k3*k2;
+                                        e3=k1*k2*k3;
+                                        Dhere=(kt-2.*k1)*(kt-2.*k2)*(kt-2.*k3)
+                                        Ghere=2.*e2/3.-(k1**2.+k2**2.+k3**2.)/3.
+                                        Norto = (840.*np.pi**2.-7363.-189.*(20.*np.pi**2.-193.))/(29114. - 2940.*np.pi**2.)
+                                        BNG2func = Azeta**2.*(18./5.)*Tfunc(k1)*Tfunc(k2)*Tfunc(k3)*(1./(k1**2.*k2**2.*k3**2.))*((1.+phere)*Dhere/e3 -phere*Ghere**3./e3**2.)/Norto
+                                        return BNG2func
 
                                 # Coordinate distortion on mu
                                 nnu = lambda mu: mu/apar/(np.sqrt(np.abs(mu**2./apar**2. + (1-mu**2.)/aperp**2.)))
@@ -243,26 +265,26 @@ class full_shape_spectra(Likelihood_prior):
                                 zz21 = self.bk_utils.F2(kk1*qq1,kk2*qq2,kk3*qq3,b1,b2,bG2)+b1**3.*beta*((nnu2*kk2*qq2+nnu1*kk1*qq1)/kk3/qq3)**2.*self.bk_utils.G2(kk1*qq1,kk2*qq2,kk3*qq3)+(b1**4.*beta/2.)*(nnu2*kk2*qq2+nnu1*kk1*qq1)*(nnu1*(1.+beta*nnu2**2.)/kk1/qq1 + nnu2*(1.+beta*nnu1**2.)/kk2/qq2)
                                 zz22 = self.bk_utils.F2(kk1*qq1,kk3*qq3,kk2*qq2,b1,b2,bG2)+b1**3.*beta*((nnu3*kk3*qq3+nnu1*kk1*qq1)/kk2/qq2)**2.*self.bk_utils.G2(kk1*qq1,kk3*qq3,kk2*qq2)+(b1**4.*beta/2.)*(nnu3*kk3*qq3+nnu1*kk1*qq1)*(nnu1*(1.+beta*nnu3**2.)/kk1/qq1 + nnu3*(1.+beta*nnu1**2.)/kk3/qq3)
                                 zz23 = self.bk_utils.F2(kk2*qq2,kk3*qq3,kk1*qq1,b1,b2,bG2)+b1**3.*beta*((nnu2*kk2*qq2+nnu3*kk3*qq3)/kk1/qq1)**2.*self.bk_utils.G2(kk2*qq2,kk3*qq3,kk1*qq1)+(b1**4.*beta/2.)*(nnu2*kk2*qq2+nnu3*kk3*qq3)*(nnu2*(1.+beta*nnu3**2.)/kk2/qq2 + nnu3*(1.+beta*nnu2**2.)/kk3/qq3)
-                                
-                                FF2func1 = zz21*(1+beta*nnu1**2)*(1.+beta*nnu2**2.)*PP_IR1*kk1*ddk1*PP_IR2*kk2*ddk2*kk3*ddk3 + 1.*0.5*(Bshot/ng)*b1**2.*PP_IR1*kk1*(1.+beta*nnu1**2.*(Bshot+2.*(1.+Pshot))/Bshot + beta**2.*nnu1**4.*2.*(1.+Pshot)/Bshot)*kk2*kk3*ddk1*ddk2*ddk3 + ((1.+Pshot)/ng)**2.*kk1*kk2*kk3*ddk1*ddk2*ddk3/2.
-                                FF2func2 = zz22*(1+beta*nnu1**2)*(1.+beta*nnu3**2.)*PP_IR1*kk1*ddk1*PP_IR3*kk3*ddk3*kk2*ddk2 + 1.*0.5*(Bshot/ng)*b1**2.*PP_IR2*kk2*(1.+beta*nnu2**2.*(Bshot+2.+2.*Pshot)/Bshot + beta**2.*nnu2**4.*2.*(1.+Pshot)/Bshot)*kk1*kk3*ddk1*ddk2*ddk3 + 0.*(1/ng)**2.*kk1*kk2*kk3*ddk1*ddk2*ddk3/6.
-                                FF2func3 = zz23*(1+beta*nnu2**2)*(1.+beta*nnu3**2.)*PP_IR2*kk2*ddk2*PP_IR3*kk3*ddk3*kk1*ddk1 + 1.*0.5*(Bshot/ng)*b1**2.*PP_IR3*kk3*(1.+beta*nnu3**2.*(Bshot+2.+2.*Pshot)/Bshot + beta**2.*nnu3**4.*2.*(1.+Pshot)/Bshot)*kk2*kk1*ddk1*ddk2*ddk3 + 0.*(1/ng)**2.*kk1*kk2*kk3*ddk1*ddk2*ddk3/6.
+
+                                FF2func1 = zz21*(1+beta*nnu1**2)*(1.+beta*nnu2**2.)*PP_IR1*kk1*ddk1*PP_IR2*kk2*ddk2*kk3*ddk3 + 1.*0.5*(Bshot/ng)*b1**2.*PP_IR1*kk1*(1.+beta*nnu1**2.*(Bshot+1.*(1.+Pshot))/Bshot + beta**2.*nnu1**4.*1.*(1.+Pshot)/Bshot)*kk2*kk3*ddk1*ddk2*ddk3 + ((1.+Pshot)/ng)**2.*kk1*kk2*kk3*ddk1*ddk2*ddk3/2.
+                                FF2func2 = zz22*(1+beta*nnu1**2)*(1.+beta*nnu3**2.)*PP_IR1*kk1*ddk1*PP_IR3*kk3*ddk3*kk2*ddk2 + 1.*0.5*(Bshot/ng)*b1**2.*PP_IR2*kk2*(1.+beta*nnu2**2.*(Bshot+1.+1.*Pshot)/Bshot + beta**2.*nnu2**4.*1.*(1.+Pshot)/Bshot)*kk1*kk3*ddk1*ddk2*ddk3 + 0.*(1/ng)**2.*kk1*kk2*kk3*ddk1*ddk2*ddk3/6.
+                                FF2func3 = zz23*(1+beta*nnu2**2)*(1.+beta*nnu3**2.)*PP_IR2*kk2*ddk2*PP_IR3*kk3*ddk3*kk1*ddk1 + 1.*0.5*(Bshot/ng)*b1**2.*PP_IR3*kk3*(1.+beta*nnu3**2.*(Bshot+1.+1.*Pshot)/Bshot + beta**2.*nnu3**4.*1.*(1.+Pshot)/Bshot)*kk2*kk1*ddk1*ddk2*ddk3 + 0.*(1/ng)**2.*kk1*kk2*kk3*ddk1*ddk2*ddk3/6.
                                 
                                 FF2func1C = zz21*(1+beta*nnu1**2)*(1.+beta*nnu2**2.)*PP_IR1C*kk1*ddk1*PP_IR2C*kk2*ddk2*kk3*ddk3 + 1.*0.5*(Bshot/ng)*b1**2.*PP_IR1C*kk1*(1.+beta*nnu1**2.*(Bshot+2.*(1.+Pshot))/Bshot + beta**2.*nnu1**4.*2.*(1.+Pshot)/Bshot)*kk2*kk3*ddk1*ddk2*ddk3 + ((1.+Pshot)/ng)**2.*kk1*kk2*kk3*ddk1*ddk2*ddk3/2.
                                 FF2func2C = zz22*(1+beta*nnu1**2)*(1.+beta*nnu3**2.)*PP_IR1C*kk1*ddk1*PP_IR3C*kk3*ddk3*kk2*ddk2 + 1.*0.5*(Bshot/ng)*b1**2.*PP_IR2C*kk2*(1.+beta*nnu2**2.*(Bshot+2.+2.*Pshot)/Bshot + beta**2.*nnu2**4.*2.*(1.+Pshot)/Bshot)*kk1*kk3*ddk1*ddk2*ddk3 + 0.*(1/ng)**2.*kk1*kk2*kk3*ddk1*ddk2*ddk3/6.
                                 FF2func3C = zz23*(1+beta*nnu2**2)*(1.+beta*nnu3**2.)*PP_IR2C*kk2*ddk2*PP_IR3C*kk3*ddk3*kk1*ddk1 + 1.*0.5*(Bshot/ng)*b1**2.*PP_IR3C*kk3*(1.+beta*nnu3**2.*(Bshot+2.+2.*Pshot)/Bshot + beta**2.*nnu3**4.*2.*(1.+Pshot)/Bshot)*kk2*kk1*ddk1*ddk2*ddk3 + 0.*(1/ng)**2.*kk1*kk2*kk3*ddk1*ddk2*ddk3/6.
 
-                                if fNL!=0:
-                                        FFnlfunc = fNL*BNG(kk1*qq1,kk2*qq2,kk3*qq3)*b1**3.*(1+beta*nnu1**2)*(1.+beta*nnu3**2.)*(1+beta*nnu2**2)*kk1*kk2*kk3*ddk1*ddk2*ddk3
-                                else:
+                                if fNL==0 and fNL2==0:
                                         FFnlfunc = 0.
+                                else:
+                                        FFnlfunc = (fNL*BNG(kk1*qq1,kk2*qq2,kk3*qq3)+fNL2*BNG2(kk1*qq1,kk2*qq2,kk3*qq3))*b1**3.*(1+beta*nnu1**2)*(1.+beta*nnu3**2.)*(1+beta*nnu2**2)*kk1*kk2*kk3*ddk1*ddk2*ddk3
 
                                 B_matrix1 = (2.*FF2func1 + 2.*FF2func2 + 2.*FF2func3 + FFnlfunc)/apar**2./aperp**4.
                                 
                                 B_matrix2 = b1**2.*(((1.+beta*nnu1**2.)*PP_IR1+PP_IR2*(1.+beta*nnu2**2.)+ PP_IR3*(1.+beta*nnu3**2.))*kk1*kk2*kk3*ddk1*ddk2*ddk3)/apar**2./aperp**4.
-
-                                B_matrix3 = (b1*(2.*beta*nnu1**2.*(1.+beta*nnu1**2.)*PP_IR1+PP_IR2*(beta*nnu2**2.*2.)*(1.+beta*nnu2**2.)+ PP_IR3*(2.*beta*nnu3**2.)*(1.+beta*nnu3**2.) + 2.*self.inv_nbar)*kk1*kk2*kk3*ddk1*ddk2*ddk3)/apar**2./aperp**4.
-
+                
+                                B_matrix3 = (b1**2.*(1.*beta*nnu1**2.*(1.+beta*nnu1**2.)*PP_IR1+PP_IR2*(beta*nnu2**2.)*(1.+beta*nnu2**2.)+ PP_IR3*(beta*nnu3**2.)*(1.+beta*nnu3**2.)) + 2.*self.inv_nbar*(1.+Pshot))*kk1*kk2*kk3*ddk1*ddk2*ddk3/apar**2./aperp**4.
+                                
                                 B_matrix4 = (2.*FF2func1C + 2.*FF2func2C + 2.*FF2func3C - 2.*FF2func1 - 2.*FF2func2 - 2.*FF2func3)/apar**2./aperp**4.
                                 
                                 return B_matrix1, B_matrix2, B_matrix3, B_matrix4
@@ -307,9 +329,16 @@ class full_shape_spectra(Likelihood_prior):
 
                 ### COMBINE AND COMPUTE LIKELIHOOD
 
+                print(theory_minus_data[:10])
+                print(theory_minus_data[nP:nP+10])
+                print(theory_minus_data[2*nP:2*nP+10])
+                print(theory_minus_data[3*nP:3*nP+10])
+                print(theory_minus_data[3*nP+nQ:3*nP+nQ+10])
+                print(theory_minus_data[-2:])
+
                 # Assemble full covariance including nuisance parameter marginalizations
-                marg_cov = dataset.cov + std_bGamma3*np.outer(deriv_bGamma3,deriv_bGamma3) + std_Pshot**2.*np.outer(deriv_Pshot,deriv_Pshot) + std_a0**2.*np.outer(deriv_a0,deriv_a0) + std_a2**2.*np.outer(deriv_a2,deriv_a2) + std_cs4**2.*np.outer(deriv_cs4,deriv_cs4)+std_cs2**2.*np.outer(deriv_cs2,deriv_cs2)+std_cs0**2.*np.outer(deriv_cs0,deriv_cs0) + std_b4**2.*np.outer(deriv_b4,deriv_b4) + std_Bshot**2.*np.outer(deriv_Bshot,deriv_Bshot) + std_c1**2.*np.outer(deriv_c1,deriv_c1)
-                
+                marg_cov = dataset.cov + std_bGamma3*np.outer(deriv_bGamma3,deriv_bGamma3) + std_Pshot**2.*np.outer(deriv_Pshot,deriv_Pshot) + std_a0**2.*np.outer(deriv_a0,deriv_a0) + std_a2**2.*np.outer(deriv_a2,deriv_a2) + std_cs4**2.*np.outer(deriv_cs4,deriv_cs4)+std_cs2**2.*np.outer(deriv_cs2,deriv_cs2)+std_cs0**2.*np.outer(deriv_cs0,deriv_cs0) + std_b4**2.*np.outer(deriv_b4,deriv_b4) + std_Bshot**2.*np.outer(deriv_Bshot,deriv_Bshot) + std_c1**2.*np.outer(deriv_c1,deriv_c1)  + std_bphi**2.*np.outer(deriv_bphi,deriv_bphi)
+
                 # Compute chi2
                 chi2 = np.inner(theory_minus_data,np.inner(np.linalg.inv(marg_cov),theory_minus_data))
                 
@@ -317,6 +346,6 @@ class full_shape_spectra(Likelihood_prior):
                 chi2 += np.linalg.slogdet(marg_cov)[1] - dataset.logdetcov
                 
                 # Add parameter priors
-                chi2 += (Pshot-0.)**2./1.**2. + (Bshot-1.)**2. + (mean_c1-0.)**2./5.**2. + (b2-0.)**2./1.**2. + (bG2-0.)**2./1.**2.
+                chi2 += (b2-0.)**2./1.**2. + (bG2-0.)**2./1.**2.
                 
                 return -0.5*chi2
