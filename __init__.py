@@ -69,15 +69,12 @@ class full_shape_spectra(Likelihood_prior):
                 mean_a2, std_a2 = self.prior_a2
 
                 print("HERE!")
-                # 
-                #  
-                psh = 3500. # scale for stochastic parameters    
                 # Means
                 Pshot = 0.
                 Bshot = 1.
                 # Standard deviations
-                std_Pshot = 1.*psh
-                std_Bshot = 1.*psh
+                std_Pshot = 1.*self.inv_nbar
+                std_Bshot = 1.*self.inv_nbar
                 
                 # Define local variables 
                 dataset = self.dataset
@@ -112,7 +109,7 @@ class full_shape_spectra(Likelihood_prior):
                         pk_theory = PkTheory(self, all_theory, h, norm, fz, k_grid, dataset.kPQ, nP, nQ)
                         
                         # Compute theory model for Pl and add to (theory - data)
-                        P0, P2, P4 = pk_theory.compute_Pl_oneloop(b1, b2, bG2, mean_bGamma3, mean_cs0, mean_cs2, mean_cs4, mean_b4, mean_a0, mean_a2, psh, Pshot)
+                        P0, P2, P4 = pk_theory.compute_Pl_oneloop(b1, b2, bG2, mean_bGamma3, mean_cs0, mean_cs2, mean_cs4, mean_b4, mean_a0, mean_a2, self.inv_nbar, Pshot)
                         theory_minus_data[0*nP:1*nP] = P0 - dataset.P0
                         theory_minus_data[1*nP:2*nP] = P2 - dataset.P2
                         theory_minus_data[2*nP:3*nP] = P4 - dataset.P4
@@ -134,7 +131,7 @@ class full_shape_spectra(Likelihood_prior):
                 if self.use_Q:
                         
                         # Compute theoretical Q0 model and add to (theory - data)
-                        Q0 = pk_theory.compute_Q0_oneloop(b1, b2, bG2, mean_bGamma3, mean_cs0, mean_cs2, mean_cs4, mean_b4, mean_a0, mean_a2, psh, Pshot)
+                        Q0 = pk_theory.compute_Q0_oneloop(b1, b2, bG2, mean_bGamma3, mean_cs0, mean_cs2, mean_cs4, mean_b4, mean_a0, mean_a2, self.inv_nbar, Pshot)
                         theory_minus_data[3*nP:3*nP+nQ] = Q0 - dataset.Q0
 
                         # Compute derivatives of Q0 with respect to parameters
@@ -159,6 +156,10 @@ class full_shape_spectra(Likelihood_prior):
                         theory_minus_data[-2] = A_par - dataset.alphas[0]
                         theory_minus_data[-1] = A_perp - dataset.alphas[1]
 
+                print("TODO: sort out 1/nbar")
+                print("TODO: add Bk module")
+                print("TODO: sort Pk/Bk")
+
                 #### Bispectrum
                 if self.use_B:
 
@@ -175,7 +176,7 @@ class full_shape_spectra(Likelihood_prior):
                         Plintab = -1.*norm**2.*(all_theory[10]/h**2./k_grid**2)*h**3
                         P2 = norm**2.*(all_theory[14])*h**3.
 
-                        ng = (1.+Ashot)/psh
+                        ng = (1.+Ashot)/self.inv_nbar
 
                         # IR resummation parameters
                         r_bao = cosmo.rs_drag()*h
@@ -260,7 +261,7 @@ class full_shape_spectra(Likelihood_prior):
                                 
                                 B_matrix2 = b1**2.*(((1.+beta*nnu1**2.)*PP_IR1+PP_IR2*(1.+beta*nnu2**2.)+ PP_IR3*(1.+beta*nnu3**2.))*kk1*kk2*kk3*ddk1*ddk2*ddk3)/apar**2./aperp**4.
 
-                                B_matrix3 = (b1*(2.*beta*nnu1**2.*(1.+beta*nnu1**2.)*PP_IR1+PP_IR2*(beta*nnu2**2.*2.)*(1.+beta*nnu2**2.)+ PP_IR3*(2.*beta*nnu3**2.)*(1.+beta*nnu3**2.) + 2.*psh)*kk1*kk2*kk3*ddk1*ddk2*ddk3)/apar**2./aperp**4.
+                                B_matrix3 = (b1*(2.*beta*nnu1**2.*(1.+beta*nnu1**2.)*PP_IR1+PP_IR2*(beta*nnu2**2.*2.)*(1.+beta*nnu2**2.)+ PP_IR3*(2.*beta*nnu3**2.)*(1.+beta*nnu3**2.) + 2.*self.inv_nbar)*kk1*kk2*kk3*ddk1*ddk2*ddk3)/apar**2./aperp**4.
 
                                 B_matrix4 = (2.*FF2func1C + 2.*FF2func2C + 2.*FF2func3C - 2.*FF2func1 - 2.*FF2func2 - 2.*FF2func3)/apar**2./aperp**4.
                                 

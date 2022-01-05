@@ -147,11 +147,11 @@ class PkTheory(object):
             else:
                     return input_table
     
-    def compute_Pl_oneloop(self, b1, b2, bG2, bGamma3, cs0, cs2, cs4, b4, a0, a2, psh, Pshot):
+    def compute_Pl_oneloop(self, b1, b2, bG2, bGamma3, cs0, cs2, cs4, b4, a0, a2, inv_nbar, Pshot):
             """Compute the 1-loop power spectrum multipoles, given the bias parameters."""
             
             if not hasattr(self, 'P0'):
-                    self._load_P_oneloop_all(b1, b2, bG2, bGamma3, cs0, cs2, cs4, b4, a0, a2, psh, Pshot)
+                    self._load_P_oneloop_all(b1, b2, bG2, bGamma3, cs0, cs2, cs4, b4, a0, a2, inv_nbar, Pshot)
             
             P0 = self.P0[:self.nP]
             P2 = self.P2[:self.nP]
@@ -159,17 +159,17 @@ class PkTheory(object):
             
             return P0, P2, P4
 
-    def compute_Q0_oneloop(self, b1, b2, bG2, bGamma3, cs0, cs2, cs4, b4, a0, a2, psh, Pshot):
+    def compute_Q0_oneloop(self, b1, b2, bG2, bGamma3, cs0, cs2, cs4, b4, a0, a2, inv_nbar, Pshot):
             """Compute the 1-loop Q0 theory, given the bias parameters."""
             
             if not hasattr(self, 'P0'):
-                    self._load_P_oneloop_all(b1, b2, bG2, bGamma3, cs0, cs2, cs4, b4, a0, a2, psh, Pshot)
+                    self._load_P_oneloop_all(b1, b2, bG2, bGamma3, cs0, cs2, cs4, b4, a0, a2, inv_nbar, Pshot)
             
             Q0 = self.P0[self.nP:]-1./2.*self.P2[self.nP:]+3./8.*self.P4[self.nP:]
             
             return Q0
 
-    def _load_P_oneloop_all(self, b1, b2, bG2, bGamma3, cs0, cs2, cs4, b4, a0, a2, psh, Pshot):
+    def _load_P_oneloop_all(self, b1, b2, bG2, bGamma3, cs0, cs2, cs4, b4, a0, a2, inv_nbar, Pshot):
             """Internal function to compute the 1-loop power spectrum multipoles for all k, given the bias parameters."""
             
             # Load quantities
@@ -180,7 +180,7 @@ class PkTheory(object):
             k_grid = self.k_grid
 
             ## Compute P0, P2, P4 multipoles, integrating with respect to bins
-            self.P0 = self.bin_integrator((norm**2.*all_theory[15] +norm**4.*(all_theory[21])+ norm**1.*b1*all_theory[16] +norm**3.*b1*(all_theory[22]) + norm**0.*b1**2.*all_theory[17] +norm**2.*b1**2.*all_theory[23] + 0.25*norm**2.*b2**2.*all_theory[1] +b1*b2*norm**2.*all_theory[30]+ b2*norm**3.*all_theory[31] + b1*bG2*norm**2.*all_theory[32]+ bG2*norm**3.*all_theory[33] + b2*bG2*norm**2.*all_theory[4]+ bG2**2.*norm**2.*all_theory[5] + 2.*cs0*norm**2.*all_theory[11]/h**2. + (2.*bG2+0.8*bGamma3*norm)*norm**2.*(b1*all_theory[7]+norm*all_theory[8]))*h**3. + (psh)*Pshot + a0*(10**4)*(k_grid/0.5)**2.  + fz**2.*b4*k_grid**2.*(norm**2.*fz**2./9. + 2.*fz*b1*norm/7. + b1**2./5)*(35./8.)*all_theory[13]*h + a2*(1./3.)*(10.**4.)*(k_grid/0.45)**2.)
+            self.P0 = self.bin_integrator((norm**2.*all_theory[15] +norm**4.*(all_theory[21])+ norm**1.*b1*all_theory[16] +norm**3.*b1*(all_theory[22]) + norm**0.*b1**2.*all_theory[17] +norm**2.*b1**2.*all_theory[23] + 0.25*norm**2.*b2**2.*all_theory[1] +b1*b2*norm**2.*all_theory[30]+ b2*norm**3.*all_theory[31] + b1*bG2*norm**2.*all_theory[32]+ bG2*norm**3.*all_theory[33] + b2*bG2*norm**2.*all_theory[4]+ bG2**2.*norm**2.*all_theory[5] + 2.*cs0*norm**2.*all_theory[11]/h**2. + (2.*bG2+0.8*bGamma3*norm)*norm**2.*(b1*all_theory[7]+norm*all_theory[8]))*h**3. + (inv_nbar)*Pshot + a0*(10**4)*(k_grid/0.5)**2.  + fz**2.*b4*k_grid**2.*(norm**2.*fz**2./9. + 2.*fz*b1*norm/7. + b1**2./5)*(35./8.)*all_theory[13]*h + a2*(1./3.)*(10.**4.)*(k_grid/0.45)**2.)
             self.P2 = self.bin_integrator((norm**2.*all_theory[18] +  norm**4.*(all_theory[24])+ norm**1.*b1*all_theory[19] +norm**3.*b1*(all_theory[25]) + b1**2.*norm**2.*all_theory[26] +b1*b2*norm**2.*all_theory[34]+ b2*norm**3.*all_theory[35] + b1*bG2*norm**2.*all_theory[36]+ bG2*norm**3.*all_theory[37]  + 2.*cs2*norm**2.*all_theory[12]/h**2. + (2.*bG2+0.8*bGamma3*norm)*norm**3.*all_theory[9])*h**3. + fz**2.*b4*k_grid**2.*((norm**2.*fz**2.*70. + 165.*fz*b1*norm+99.*b1**2.)*4./693.)*(35./8.)*all_theory[13]*h + a2*(10.**4.)*(2./3.)*(k_grid/0.45)**2.)
             self.P4 = self.bin_integrator((norm**2.*all_theory[20] + norm**4.*all_theory[27]+ b1*norm**3.*all_theory[28] + b1**2.*norm**2.*all_theory[29] + b2*norm**3.*all_theory[38] + bG2*norm**3.*all_theory[39]  +2.*cs4*norm**2.*all_theory[13]/h**2.)*h**3. + fz**2.*b4*k_grid**2.*(norm**2.*fz**2.*210./143. + 30.*fz*b1*norm/11.+b1**2.)*all_theory[13]*h)
 
