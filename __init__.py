@@ -24,8 +24,15 @@ class full_shape_spectra(Likelihood_prior):
                 if self.use_B: 
                         self.bk_utils = BkUtils() 
 
-                # Define nuisance parameter mean and variances
-                prior_bGamma3 = lambda b1: (23.*(b1-1.)/42., 0.)      
+                # Define nuisance parameter mean and standard deviations
+                self.prior_bGamma3 = lambda b1: (23.*(b1-1.)/42., 0.)  
+                self.prior_cs0 = 0, 30.
+                self.prior_cs2 = 30., 30.
+                self.prior_cs4 = 0., 30.
+                self.prior_b4 = 500., 500.
+                self.prior_c1 = 0., 5.
+                self.prior_a0 = 0., self.inv_nbar
+                self.prior_a2 = 0., self.inv_nbar
                 
         def loglkl(self, cosmo, data):
                 """Compute the log-likelihood for a given set of cosmological and nuisance parameters. Note that this marginalizes over nuisance parameters that enter the model linearly."""
@@ -53,32 +60,24 @@ class full_shape_spectra(Likelihood_prior):
                 ## Define parameter mean and variances   
                 
                 mean_bGamma3, std_bGamma3 = self.prior_bGamma3(b1)
+                mean_cs0, std_cs0 = self.prior_cs0
+                mean_cs2, std_cs2 = self.prior_cs2
+                mean_cs4, std_cs4 = self.prior_cs4
+                mean_b4, std_b4 = self.prior_b4
+                mean_c1, std_c1 = self.prior_c1
+                mean_a0, std_a0 = self.prior_a0
+                mean_a2, std_a2 = self.prior_a2
 
                 print("HERE!")
                 # 
                 #  
                 psh = 3500. # scale for stochastic parameters    
                 # Means
-                mean_bGamma3 = 23.*(b1-1.)/42.
                 Pshot = 0.
                 Bshot = 1.
-                mean_c1 = 0.
-                mean_a0 = 0.
-                mean_a2 = 0.
-                mean_cs0 = 0.
-                mean_cs2 = 30.
-                mean_cs4 = 0.
-                mean_b4 = 500.
                 # Standard deviations
                 std_Pshot = 1.*psh
                 std_Bshot = 1.*psh
-                std_c1 = 5.
-                std_a0 = psh*1.
-                std_a2 = psh*1.
-                std_cs0 = 30.
-                std_cs2 = 30.
-                std_cs4 = 30.
-                std_b4 = 500.
                 
                 # Define local variables 
                 dataset = self.dataset

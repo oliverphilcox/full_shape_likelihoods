@@ -2,6 +2,9 @@
 full_shape_spectra.use_nuisance =['b^{(3)}_1','b^{(3)}_2','b^{(3)}_{G_2}','f_{NL}']
 full_shape_spectra.z = 0.38
 
+# Approximate 1/nbar of survey
+full_shape_spectra.inv_nbar = 3500.
+
 ### Which data-sets to use
 full_shape_spectra.use_P = True
 full_shape_spectra.use_Q = True
