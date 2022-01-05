@@ -8,17 +8,23 @@ import scipy.integrate as integrate
 from numpy import log, exp, sin, cos
 from scipy.special.orthogonal import p_roots
 
-class datasets(object):
+class DataSets(object):
         def __init__(self, options):
-                """Load Pk, Q0 and Bk data from file, as well as covariance matrix. The `options' argument is a dictionary of options specifying file names etc."""
+                """Load Pk, Q0 and B0 data from file, as well as covariance matrix. The `options' argument is a dictionary of options specifying file names etc."""
                 
                 # Load datasets
+                if options.use_Q and not options.use_P:
+                        raise Exception("Cannot use Q0 without power spectra!")
                 if options.use_P:
                         self.load_power_spectrum(options)
                 if options.use_B:
                         self.load_bispectrum(options)
+                else:
+                        self.nB = 0
                 if options.use_AP:
                         self.load_AP(options)
+                else:
+                        self.nAP = 0
 
                 # Load covariance
                 self.load_covariance(options)
@@ -27,29 +33,36 @@ class datasets(object):
                 """Load power spectrum multipole dataset, optionally including Q0"""
                 
                 # Load raw Pk measurements
-                k_init,Pk0_init,Pk2_init,Pk4_init=np.loadtxt(os.path.join(options.data_directory, options.P_measurements), skiprows = 0, unpack=True)
+                k_init,P0_init,P2_init,P4_init=np.loadtxt(os.path.join(options.data_directory, options.P_measurements), skiprows = 0, unpack=True)
 
                 # Count number of P bins (nP) and Q bins (nQ)
                 self.nP_init = len(k_init)
-                self.nPQ = np.sum((k_init<options.kmaxQ)&(k_init>=options.kminP)) 
-                self.nQ = np.sum((k_init<options.kmaxQ)&(k_init>=options.kmaxP))
-                self.nP = self.nPQ - self.nQ
-                self.omit = np.sum((k_init<options.kminP)) # bins to omit at start of Pk array              
-                self.omit2 = self.nP + self.omit # bins to omit at start of Q0 array
-
-                self.kP = k_init[self.omit:self.omit+self.nPQ]
-                Pk0 = Pk0_init[self.omit:self.omit+self.nPQ]
-                Pk2 = Pk2_init[self.omit:self.omit+self.nPQ]
-                Pk4 = Pk4_init[self.omit:self.omit+self.nPQ]
+                if options.use_Q:
+                        self.nPQ = np.sum((k_init<options.kmaxQ)&(k_init>=options.kminP)) 
+                        self.nQ = np.sum((k_init<options.kmaxQ)&(k_init>=options.kmaxP))
+                        self.nP = self.nPQ - self.nQ
+                        self.omitP = np.sum((k_init<options.kminP)) # bins to omit at start of Pk array              
+                        self.omitQ = self.nP + self.omitP # bins to omit at start of Q0 array
+                else:
+                        self.nP = np.sum((k_init<options.kmaxP)&(k_init>=options.kminP)) 
+                        self.nPQ = self.nP
+                        self.nQ = 0
+                        self.omitP = np.sum((k_init<options.kminP)) # bins to omit at start of Pk array              
+                
+                # Filter k and P_ell to correct bins
+                self.kP = k_init[self.omitP:self.omitP+self.nPQ]
+                P0 = P0_init[self.omitP:self.omitP+self.nPQ]
+                P2 = P2_init[self.omitP:self.omitP+self.nPQ]
+                P4 = P4_init[self.omitP:self.omitP+self.nPQ]
 
                 # Define data vectors
-                self.P0 = Pk0[:self.nP]
-                self.P2 = Pk2[:self.nP]
-                self.P4 = Pk4[:self.nP]
+                self.P0 = P0[:self.nP]
+                self.P2 = P2[:self.nP]
+                self.P4 = P4[:self.nP]
 
                 # Compute Q0 from Pk0 measurements
                 if options.use_Q:
-                        self.Q0 = Pk0[self.nP:]-1./2.*Pk2[self.nP:]+3./8.*Pk4[self.nP:]
+                        self.Q0 = P0[self.nP:]-1./2.*P2[self.nP:]+3./8.*P4[self.nP:]
 
         def load_bispectrum(self, options):
                 """Load bispectrum dataset."""
@@ -73,6 +86,7 @@ class datasets(object):
                 """Load Alcock-Paczynski dataset."""
                 
                 self.alphas = np.loadtxt(os.path.join(options.data_directory, options.AP_measurements))
+                self.nAP = 2
 
         def load_covariance(self, options):
                 """Load in the covariance matrix, filtered to the required bins and datasets [with the ordering P0, P2, P4, Q0, B0, AP]."""
@@ -83,11 +97,11 @@ class datasets(object):
                 # Define which bins we use
                 filt = []
                 if options.use_P:
-                        filt.append(np.arange(self.omit,self.omit+self.nP)) # P0
-                        filt.append(np.arange(self.omit+self.nP_init,self.omit+self.nP_init+self.nP)) # P2
-                        filt.append(np.arange(self.omit+2*self.nP_init,self.omit+2*self.nP_init+self.nP)) # P4
+                        filt.append(np.arange(self.omitP,self.omitP+self.nP)) # P0
+                        filt.append(np.arange(self.omitP+self.nP_init,self.omitP+self.nP_init+self.nP)) # P2
+                        filt.append(np.arange(self.omitP+2*self.nP_init,self.omitP+2*self.nP_init+self.nP)) # P4
                 if options.use_Q:
-                        filt.append(np.arange(self.omit2+3*self.nP_init,self.omit2+3*self.nP_init+self.nQ)) # Q0
+                        filt.append(np.arange(self.omitQ+3*self.nP_init,self.omitQ+3*self.nP_init+self.nQ)) # Q0
                 if options.use_B:
                         filt.append(np.arange(4*self.nP_init,4*self.nP_init+self.nB)) # B0
                 if options.use_AP:
@@ -96,12 +110,32 @@ class datasets(object):
                 
                 # Filter to the correct bins we want
                 self.cov = np.zeros((len(filt),len(filt)),dtype='float64')
-                for i,I in enumerate(filt):
-                        for j,J in enumerate(filt):
-                                self.cov[i,j] = cov1[I,J]
+                for i,index in enumerate(filt):
+                        for j,jndex in enumerate(filt):
+                                self.cov[i,j] = cov1[index,jndex]
 
                 # Compute matrix determinant for later use
                 self.logdetcov = np.linalg.slogdet(self.cov)[1]
+
+class BkUtils(object):
+        def __init__(self):
+                """Load a number of utility functions for the bispectrum likelihood computation"""
+
+                # Load angular integration grid
+                if not hasattr(self, 'mesh_mu'):
+                        self.compute_angular_grid()
+
+                # Selection of other bispectrum functions dumped from Mathematica
+                self.F2 = lambda k1,k2,k3,b1,b2,bG2: (b1*(-5.*(k1**2.-k2**2.)**2.+3.*(k1**2.+k2**2.)*k3**2.+2.*k3**4.) + 7.*(2.*b2*k1**2.*k2**2. + bG2*(k1-k2-k3)*(k1+k2-k3)*(k1-k2+k3)*(k1+k2+k3)))*b1**2./28./k1**2./k2**2.
+                self.G2 = lambda k1,k2,k3: -((3*(k1**2-k2**2)**2+(k1**2+k2**2)*k3**2-4*k3**4)/(28 *k1**2 *k2**2))
+                self.j2 = lambda x: (3./x**2.-1.)*np.sin(x)/x - 3.*np.cos(x)/x**2.
+
+        def compute_angular_grid(self, n_gauss=3, n_gauss2 = 8):
+                """Load the 5D angular grid used for Monte Carlo integration"""
+
+                [gauss_mu,self.gauss_w], [gauss_mu2,self.gauss_w2] = p_roots(n_gauss), p_roots(n_gauss2)
+                self.mesh_mu = np.meshgrid(gauss_mu,gauss_mu,gauss_mu,gauss_mu2,gauss_mu2, sparse=True, indexing='ij')
+
 
 class full_shape_spectra(Likelihood_prior):
 
@@ -112,33 +146,16 @@ class full_shape_spectra(Likelihood_prior):
         def __init__(self,path,data,command_line):
                 """Initialize the full shape likelihood. This loads the data-set and pre-computes a number of useful quantities."""
 
+                # Initialize the likelihood
                 Likelihood_prior.__init__(self,path,data,command_line)
 
-                # First load the data
-                self.dataset = datasets(self)
+                # Load the data
+                self.dataset = DataSets(self)
 
-                assert self.use_AP and self.use_P and self.use_Q and self.use_B, "need to change boss_n1 to use not all of AP, P, Q, B currently!"
-                        
                 # Pre-load useful quantities for bispectra
-                if self.use_B:
-
-                        # Define angular grids for bispectrum integration
-                        self.n_gauss, self.n_gauss2 = 3, 8
-                        [gauss_mu,self.gauss_w], [gauss_mu2,self.gauss_w2] = p_roots(self.n_gauss), p_roots(self.n_gauss2)
-
-                        self.mesh_mu = np.meshgrid(gauss_mu,gauss_mu,gauss_mu,gauss_mu2,gauss_mu2, sparse=True, indexing='ij')
-
-                        # Selection of functions dumped from Mathematica
-                        self.D1 = lambda k1,k2,k3,beta: (15. + 10.*beta+beta**2. + 2.*beta**2.*((k3**2.-k1**2.-k2**2.)/(2.*k1*k2))**2.)/15.
-                        self.D2 = lambda k1,k2,k3,beta: beta/3+(4 *beta**2.)/15-(k1**2. *beta**2.)/(15 *k2**2.)-(k2**2. *beta**2.)/(15 *k1**2.)-(k1**2. *beta**2.)/(30 *k3**2.)+(k1**4 *beta**2.)/(30 *k2**2. *k3**2.)-(k2**2. *beta**2.)/(30 *k3**2.)+(k2**4. *beta**2.)/(30 *k1**2. *k3**2.)+(k3**2. *beta**2.)/(30 *k1**2.)+(k3**2. *beta**2.)/(30 *k2**2.)+(2 *beta**3)/35-(k1**2. *beta**3.)/(70 *k2**2.)-(k2**2. *beta**3)/(70 *k1**2.)-(k1**2. *beta**3)/(70 *k3**2.)+(k1**4 *beta**3)/(70 *k2**2.*k3**2.)-(k2**2. *beta**3)/(70 *k3**2.)+(k2**4 *beta**3)/(70 *k1**2. *k3**2.)-(k3**2. *beta**3)/(70 *k1**2.)-(k3**2. *beta**3)/(70 *k2**2.)+(k3**4 *beta**3)/(70 *k1**2. *k2**2.)
-                        self.D3 = lambda k1,k2,k3,beta: beta/6-(k1**2. *beta)/(12 *k2**2.)-(k2**2. *beta)/(12 *k1**2.)+(k3**2. *beta)/(12 *k1**2.)+(k3**2. *beta)/(12 *k2**2.)+ beta**2./6-(k1**2. *beta**2.)/(12 *k2**2.)-(k2**2. *beta**2.)/(12 *k1**2.)+(k3**2. *beta**2.)/(60 *k1**2.)+(k3**2. *beta**2.)/(60 *k2**2.)+(k3**4. *beta**2.)/(15 *k1**2. *k2**2.)+(2 *beta**3.)/35-(k1**4. *beta**3.)/(140 *k2**4.)-(3 *k1**2. *beta**3.)/(140 *k2**2.)-(3 *k2**2. *beta**3.)/(140 *k1**2.)-(k2**4. *beta**3.)/(140 *k1**4.)-(k3**2. *beta**3.)/(35 *k1**2.)+(3 *k1**2. *k3**2. *beta**3.)/(140 *k2**4.)-(k3**2. *beta**3.)/(35 *k2**2.)+(3 *k2**2. *k3**2. *beta**3.)/(140 *k1**4.)-(3 *k3**4. *beta**3.)/(140 *k1**4.)-(3 *k3**4. *beta**3.)/(140 *k2**4.)+(3 *k3**4. *beta**3.)/(70 *k1**2. *k2**2.)+(k3**6 *beta**3.)/(140 *k1**2. *k2**4.)+(k3**6 *beta**3.)/(140 *k1**4. *k2**2.)+ beta**4./105-(k1**4. *beta**4.)/(420 *k2**4.)-(k1**2. *beta**4.)/(420 *k2**2.)-(k2**2. *beta**4.)/(420 *k1**2.)-(k2**4. *beta**4.)/(420 *k1**4.)-(k3**2. *beta**4.)/(105 *k1**2.)+(k1**2. *k3**2. *beta**4.)/(180 *k2**4.)-(k3**2. *beta**4.)/(105 *k2**2.)+(k2**2. *k3**2. *beta**4.)/(180 *k1**4.)-(k3**4. *beta**4.)/(420 *k1**4.)-(k3**4. *beta**4.)/(420 *k2**4.)+(k3**4. *beta**4.)/(70 *k1**2. *k2**2.)-(k3**6 *beta**4.)/(420 *k1**2. *k2**4.)-(k3**6 *beta**4.)/(420 *k1**4. *k2**2.)+(k3**8 *beta**4.)/(630 *k1**4. *k2**4.)
-                        self.F2 = lambda k1,k2,k3,beta,b1,b2,bG2: (b1*(-5.*(k1**2.-k2**2.)**2.+3.*(k1**2.+k2**2.)*k3**2.+2.*k3**4.)*self.D1(k1,k2,k3,beta) + b1*(-3.*(k1**2.-k2**2.)**2.-1.*(k1**2.+k2**2.)*k3**2.+4.*k3**4.)*self.D2(k1,k2,k3,beta) + 7.*self.D1(k1,k2,k3,beta)*(2.*b2*k1**2.*k2**2. + bG2*(k1-k2-k3)*(k1+k2-k3)*(k1-k2+k3)*(k1+k2+k3)))*b1**2./28./k1**2./k2**2. + b1**4.*self.D3(k1,k2,k3,beta)
-                        self.F2real = lambda k1,k2,k3,b1,b2,bG2: (b1*(-5.*(k1**2.-k2**2.)**2.+3.*(k1**2.+k2**2.)*k3**2.+2.*k3**4.) + 7.*(2.*b2*k1**2.*k2**2. + bG2*(k1-k2-k3)*(k1+k2-k3)*(k1-k2+k3)*(k1+k2+k3)))*b1**2./28./k1**2./k2**2.
-                        self.G2 = lambda k1,k2,k3: -((3*(k1**2-k2**2)**2+(k1**2+k2**2)*k3**2-4*k3**4)/(28 *k1**2 *k2**2))
-                        self.Bbinl0 = lambda I01,I02,I21,I22,I41,I42,I61,I62,Im21,Im22,Im41,Im42,k32,k34,k36,k38,k3m2,e1,e2,e3,e4,e5,e6,e7,e8,e9,e10,e11,e12,e13,e14,e15,e16,e17,e18,e19,e20,e21: 2.*(e1*I22*k3m2*I01 + e2*I61*Im42*k3m2 + e3*k32*Im22*I01 + e4*k34*Im42*I01 + e5*I01*I02 + e6*I41*Im22*k3m2 + e7*I41*Im42+ e8*I21*I02*k3m2 + e9*I21*Im22 + e10*I21*k32*Im42 + Im41*(e11*I62*k3m2 + e12*k34*I02 + e13*k36*Im22 + e14*I42 + e15*k38*Im42 + e16*I22*k32) + Im21*(e17*I42*k3m2 +e18*k32*I02 + e19*I22 + e20*k36*Im42 +e21*k34*Im22) )
-                        self.Bbin = lambda I01,I02,I21,I22,Im21,Im22,k32,k34,c1,c2,c3,c4,b1: 2.*(b1**2.)*(c1*I01*I02 + c2*(I21*Im22+I22*Im21)+c3*(I02*Im21+I01*Im22)*k32 +c4*(Im21*Im22)*k34)
-                        self.j2 = lambda x: (3./x**2.-1.)*np.sin(x)/x - 3.*np.cos(x)/x**2.
-
+                if self.use_B: 
+                        self.bk_utils = BkUtils()        
+                
         def loglkl(self, cosmo, data):
                 """Compute the log-likelihood for a given set of cosmological and nuisance parameters. Note that this marginalizes over nuisance parameters that enter the model linearly."""
 
@@ -191,8 +208,7 @@ class full_shape_spectra(Likelihood_prior):
 
                 # Define local variables 
                 dataset = self.dataset
-                nP, nQ, nPQ, nB = dataset.nP, dataset.nQ, dataset.nPQ, dataset.nB
-                kB, dkB = dataset.kB, dataset.dkB
+                nP, nQ, nPQ, nB, nAP = dataset.nP, dataset.nQ, dataset.nPQ, dataset.nB, dataset.nAP
                 
                 # Compute useful quantities for AP parameters
                 z = self.z
@@ -209,8 +225,8 @@ class full_shape_spectra(Likelihood_prior):
                         kint = dataset.kP
 
                 # Create output arrays
-                theory_minus_data = np.zeros(3*nP+nB+nQ+2)
-                cov_bG3, cov_Pshot, cov_Bshot, cov_c1, cov_a0, cov_a2, cov_cs0, cov_cs2, cov_cs4, cov_b4 = [np.zeros(3*nP+nB+nQ+2) for _ in range(10)]
+                theory_minus_data = np.zeros(3*nP+nB+nQ+nAP)
+                cov_bG3, cov_Pshot, cov_Bshot, cov_c1, cov_a0, cov_a2, cov_cs0, cov_cs2, cov_cs4, cov_b4 = [np.zeros(3*nP+nB+nQ+nAP) for _ in range(10)]
 
                 # Run CLASS-PT
                 all_theory = cosmo.get_pk_mult(kint*h,z,len(kint))
@@ -230,8 +246,6 @@ class full_shape_spectra(Likelihood_prior):
                                 else:
                                         return input_table
 
-                        P0tab = ((norm**2.*all_theory[15] +norm**4.*(all_theory[21])+ norm**1.*b1*all_theory[16] +norm**3.*b1*(all_theory[22]) + norm**0.*b1**2.*all_theory[17] +norm**2.*b1**2.*all_theory[23] + 0.25*norm**2.*b2**2.*all_theory[1] +b1*b2*norm**2.*all_theory[30]+ b2*norm**3.*all_theory[31] + b1*bG2*norm**2.*all_theory[32]+ bG2*norm**3.*all_theory[33] + b2*bG2*norm**2.*all_theory[4]+ bG2**2.*norm**2.*all_theory[5] + 2.*css0*norm**2.*all_theory[11]/h**2. + (2.*bG2+0.8*bGamma3*norm)*norm**2.*(b1*all_theory[7]+norm*all_theory[8]))*h**3. + (psh)*Pshot + a0*(10**4)*(kint/0.5)**2.  + fz**2.*b4*kint**2.*(norm**2.*fz**2./9. + 2.*fz*b1*norm/7. + b1**2./5)*(35./8.)*all_theory[13]*h + a2*(1./3.)*(10.**4.)*(kint/0.45)**2.)
-                        
                         ## Compute P0, P2, P4 multipoles, integrating with respect to bins
                         P0 = bin_integrator((norm**2.*all_theory[15] +norm**4.*(all_theory[21])+ norm**1.*b1*all_theory[16] +norm**3.*b1*(all_theory[22]) + norm**0.*b1**2.*all_theory[17] +norm**2.*b1**2.*all_theory[23] + 0.25*norm**2.*b2**2.*all_theory[1] +b1*b2*norm**2.*all_theory[30]+ b2*norm**3.*all_theory[31] + b1*bG2*norm**2.*all_theory[32]+ bG2*norm**3.*all_theory[33] + b2*bG2*norm**2.*all_theory[4]+ bG2**2.*norm**2.*all_theory[5] + 2.*css0*norm**2.*all_theory[11]/h**2. + (2.*bG2+0.8*bGamma3*norm)*norm**2.*(b1*all_theory[7]+norm*all_theory[8]))*h**3. + (psh)*Pshot + a0*(10**4)*(kint/0.5)**2.  + fz**2.*b4*kint**2.*(norm**2.*fz**2./9. + 2.*fz*b1*norm/7. + b1**2./5)*(35./8.)*all_theory[13]*h + a2*(1./3.)*(10.**4.)*(kint/0.45)**2.)
                         P2 = bin_integrator((norm**2.*all_theory[18] +  norm**4.*(all_theory[24])+ norm**1.*b1*all_theory[19] +norm**3.*b1*(all_theory[25]) + b1**2.*norm**2.*all_theory[26] +b1*b2*norm**2.*all_theory[34]+ b2*norm**3.*all_theory[35] + b1*bG2*norm**2.*all_theory[36]+ bG2*norm**3.*all_theory[37]  + 2.*css2*norm**2.*all_theory[12]/h**2. + (2.*bG2+0.8*bGamma3*norm)*norm**3.*all_theory[9])*h**3. + fz**2.*b4*kint**2.*((norm**2.*fz**2.*70. + 165.*fz*b1*norm+99.*b1**2.)*4./693.)*(35./8.)*all_theory[13]*h + a2*(10.**4.)*(2./3.)*(kint/0.45)**2.)
@@ -295,6 +309,9 @@ class full_shape_spectra(Likelihood_prior):
                 #### Bispectrum
                 if self.use_B:
 
+                        # Define local variables
+                        kB, dkB = dataset.kB, dataset.dkB
+                
                         ### MESSY BELOW HERE!!
                         Ashot = 0.
                         c0 = 0.
@@ -321,7 +338,7 @@ class full_shape_spectra(Likelihood_prior):
                         Pnwfunc = interpolate.InterpolatedUnivariateSpline(kint,Pnw,ext=3)
 
                         Sigma2 = integrate.quad(lambda k: (4*np.pi)*exp(1.*k)*P0int(exp(k))*(1.-3*(2*r_bao*exp(k)*cos(exp(k)*r_bao)+(-2+r_bao**2*exp(k)**2)*sin(r_bao*exp(k)))/(exp(k)*r_bao)**3)/(3*(2*np.pi)**3.), log(2.e-4), log(ks_IR))[0]
-                        deltaSigma2 = integrate.quad(lambda k: (4*np.pi)*exp(1.*k)*P0int(exp(k))*(self.j2(exp(k)*r_bao))/((2*np.pi)**3.), log(2.e-4), log(ks_IR))[0]
+                        deltaSigma2 = integrate.quad(lambda k: (4*np.pi)*exp(1.*k)*P0int(exp(k))*(self.bk_utils.j2(exp(k)*r_bao))/((2*np.pi)**3.), log(2.e-4), log(ks_IR))[0]
                         
                         # IR resummed spectra
                         P_IR = lambda k, mu: Pnwfunc(k) +  np.exp(-k**2.*(Sigma2*(1.+2.*fz*mu**2.*(2.+fz)) + deltaSigma2*mu**2.*fz**2.*(mu**2.-1.)))*Pwfunc(k) -(c0+c1*mu**2.+c2*mu**4.)*(k/0.3)**2.*P0int(k)/(b1+fz*mu**2.)
@@ -343,7 +360,7 @@ class full_shape_spectra(Likelihood_prior):
                         Tfunc = lambda k: (P0int(k)/(Azeta*((k/0.05)**(cosmo.n_s()-1.))/k**3.))**0.5
                         BNG = lambda k1, k2, k3: Azeta**2.*(Tfunc(k1)*Tfunc(k2)*Tfunc(k3)*(18./5.)*(-1./k1**3./k2**3.-1./k3**3./k2**3.-1./k1**3./k3**3.-2./k1**2./k2**2./k3**2.+1/k1/k2**2./k3**3.+1/k1/k3**2./k2**3.+1/k2/k3**2./k1**3.+1/k2/k1**2./k3**3.+1/k3/k1**2./k2**3.+1/k3/k2**2./k1**3.))
 
-                        def Bk_matrices(k1,k2,k3,mu1,phi,kc1=0,kc2=0,kc3=0,apar=1,aperp=1):
+                        def B_matrices(k1,k2,k3,mu1,phi,kc1=0,kc2=0,kc3=0,apar=1,aperp=1):
                                 ddk1 = dk1/2.
                                 ddk2 = dk2/2.
                                 ddk3 = dk3/2.
@@ -368,9 +385,9 @@ class full_shape_spectra(Likelihood_prior):
                                 PP_IR1C, PP_IR2C, PP_IR3C = P_IRC(kk1*qq1,nnu1), P_IRC(kk2*qq2,nnu2), P_IRC(kk3*qq3,nnu3)
 
                                 ### Bfunc3
-                                zz21 = self.F2real(kk1*qq1,kk2*qq2,kk3*qq3,b1,b2,bG2)+b1**3.*beta*((nnu2*kk2*qq2+nnu1*kk1*qq1)/kk3/qq3)**2.*self.G2(kk1*qq1,kk2*qq2,kk3*qq3)+(b1**4.*beta/2.)*(nnu2*kk2*qq2+nnu1*kk1*qq1)*(nnu1*(1.+beta*nnu2**2.)/kk1/qq1 + nnu2*(1.+beta*nnu1**2.)/kk2/qq2)
-                                zz22 = self.F2real(kk1*qq1,kk3*qq3,kk2*qq2,b1,b2,bG2)+b1**3.*beta*((nnu3*kk3*qq3+nnu1*kk1*qq1)/kk2/qq2)**2.*self.G2(kk1*qq1,kk3*qq3,kk2*qq2)+(b1**4.*beta/2.)*(nnu3*kk3*qq3+nnu1*kk1*qq1)*(nnu1*(1.+beta*nnu3**2.)/kk1/qq1 + nnu3*(1.+beta*nnu1**2.)/kk3/qq3)
-                                zz23 = self.F2real(kk2*qq2,kk3*qq3,kk1*qq1,b1,b2,bG2)+b1**3.*beta*((nnu2*kk2*qq2+nnu3*kk3*qq3)/kk1/qq1)**2.*self.G2(kk2*qq2,kk3*qq3,kk1*qq1)+(b1**4.*beta/2.)*(nnu2*kk2*qq2+nnu3*kk3*qq3)*(nnu2*(1.+beta*nnu3**2.)/kk2/qq2 + nnu3*(1.+beta*nnu2**2.)/kk3/qq3)
+                                zz21 = self.bk_utils.F2(kk1*qq1,kk2*qq2,kk3*qq3,b1,b2,bG2)+b1**3.*beta*((nnu2*kk2*qq2+nnu1*kk1*qq1)/kk3/qq3)**2.*self.bk_utils.G2(kk1*qq1,kk2*qq2,kk3*qq3)+(b1**4.*beta/2.)*(nnu2*kk2*qq2+nnu1*kk1*qq1)*(nnu1*(1.+beta*nnu2**2.)/kk1/qq1 + nnu2*(1.+beta*nnu1**2.)/kk2/qq2)
+                                zz22 = self.bk_utils.F2(kk1*qq1,kk3*qq3,kk2*qq2,b1,b2,bG2)+b1**3.*beta*((nnu3*kk3*qq3+nnu1*kk1*qq1)/kk2/qq2)**2.*self.bk_utils.G2(kk1*qq1,kk3*qq3,kk2*qq2)+(b1**4.*beta/2.)*(nnu3*kk3*qq3+nnu1*kk1*qq1)*(nnu1*(1.+beta*nnu3**2.)/kk1/qq1 + nnu3*(1.+beta*nnu1**2.)/kk3/qq3)
+                                zz23 = self.bk_utils.F2(kk2*qq2,kk3*qq3,kk1*qq1,b1,b2,bG2)+b1**3.*beta*((nnu2*kk2*qq2+nnu3*kk3*qq3)/kk1/qq1)**2.*self.bk_utils.G2(kk2*qq2,kk3*qq3,kk1*qq1)+(b1**4.*beta/2.)*(nnu2*kk2*qq2+nnu3*kk3*qq3)*(nnu2*(1.+beta*nnu3**2.)/kk2/qq2 + nnu3*(1.+beta*nnu2**2.)/kk3/qq3)
                                 
                                 FF2func1 = zz21*(1+beta*nnu1**2)*(1.+beta*nnu2**2.)*PP_IR1*kk1*ddk1*PP_IR2*kk2*ddk2*kk3*ddk3 + 1.*0.5*(Bshot/ng)*b1**2.*PP_IR1*kk1*(1.+beta*nnu1**2.*(Bshot+2.*(1.+Pshot))/Bshot + beta**2.*nnu1**4.*2.*(1.+Pshot)/Bshot)*kk2*kk3*ddk1*ddk2*ddk3 + ((1.+Pshot)/ng)**2.*kk1*kk2*kk3*ddk1*ddk2*ddk3/2.
                                 FF2func2 = zz22*(1+beta*nnu1**2)*(1.+beta*nnu3**2.)*PP_IR1*kk1*ddk1*PP_IR3*kk3*ddk3*kk2*ddk2 + 1.*0.5*(Bshot/ng)*b1**2.*PP_IR2*kk2*(1.+beta*nnu2**2.*(Bshot+2.+2.*Pshot)/Bshot + beta**2.*nnu2**4.*2.*(1.+Pshot)/Bshot)*kk1*kk3*ddk1*ddk2*ddk3 + 0.*(1/ng)**2.*kk1*kk2*kk3*ddk1*ddk2*ddk3/6.
@@ -380,17 +397,20 @@ class full_shape_spectra(Likelihood_prior):
                                 FF2func2C = zz22*(1+beta*nnu1**2)*(1.+beta*nnu3**2.)*PP_IR1C*kk1*ddk1*PP_IR3C*kk3*ddk3*kk2*ddk2 + 1.*0.5*(Bshot/ng)*b1**2.*PP_IR2C*kk2*(1.+beta*nnu2**2.*(Bshot+2.+2.*Pshot)/Bshot + beta**2.*nnu2**4.*2.*(1.+Pshot)/Bshot)*kk1*kk3*ddk1*ddk2*ddk3 + 0.*(1/ng)**2.*kk1*kk2*kk3*ddk1*ddk2*ddk3/6.
                                 FF2func3C = zz23*(1+beta*nnu2**2)*(1.+beta*nnu3**2.)*PP_IR2C*kk2*ddk2*PP_IR3C*kk3*ddk3*kk1*ddk1 + 1.*0.5*(Bshot/ng)*b1**2.*PP_IR3C*kk3*(1.+beta*nnu3**2.*(Bshot+2.+2.*Pshot)/Bshot + beta**2.*nnu3**4.*2.*(1.+Pshot)/Bshot)*kk2*kk1*ddk1*ddk2*ddk3 + 0.*(1/ng)**2.*kk1*kk2*kk3*ddk1*ddk2*ddk3/6.
 
-                                FFnlfunc = fNL*BNG(kk1*qq1,kk2*qq2,kk3*qq3)*b1**3.*(1+beta*nnu1**2)*(1.+beta*nnu3**2.)*(1+beta*nnu2**2)*kk1*kk2*kk3*ddk1*ddk2*ddk3
+                                if fNL!=0:
+                                        FFnlfunc = fNL*BNG(kk1*qq1,kk2*qq2,kk3*qq3)*b1**3.*(1+beta*nnu1**2)*(1.+beta*nnu3**2.)*(1+beta*nnu2**2)*kk1*kk2*kk3*ddk1*ddk2*ddk3
+                                else:
+                                        FFnlfunc = 0.
 
-                                Bfunc3 = (2.*FF2func1 + 2.*FF2func2 + 2.*FF2func3 + FFnlfunc)/apar**2./aperp**4.
+                                B_matrix1 = (2.*FF2func1 + 2.*FF2func2 + 2.*FF2func3 + FFnlfunc)/apar**2./aperp**4.
                                 
-                                EBfunc = b1**2.*(((1.+beta*nnu1**2.)*PP_IR1+PP_IR2*(1.+beta*nnu2**2.)+ PP_IR3*(1.+beta*nnu3**2.))*kk1*kk2*kk3*ddk1*ddk2*ddk3)/apar**2./aperp**4.
+                                B_matrix2 = b1**2.*(((1.+beta*nnu1**2.)*PP_IR1+PP_IR2*(1.+beta*nnu2**2.)+ PP_IR3*(1.+beta*nnu3**2.))*kk1*kk2*kk3*ddk1*ddk2*ddk3)/apar**2./aperp**4.
 
-                                EPfunc = (b1*(2.*beta*nnu1**2.*(1.+beta*nnu1**2.)*PP_IR1+PP_IR2*(beta*nnu2**2.*2.)*(1.+beta*nnu2**2.)+ PP_IR3*(2.*beta*nnu3**2.)*(1.+beta*nnu3**2.) + 2.*psh)*kk1*kk2*kk3*ddk1*ddk2*ddk3)/apar**2./aperp**4.
+                                B_matrix3 = (b1*(2.*beta*nnu1**2.*(1.+beta*nnu1**2.)*PP_IR1+PP_IR2*(beta*nnu2**2.*2.)*(1.+beta*nnu2**2.)+ PP_IR3*(2.*beta*nnu3**2.)*(1.+beta*nnu3**2.) + 2.*psh)*kk1*kk2*kk3*ddk1*ddk2*ddk3)/apar**2./aperp**4.
 
-                                Bfunc4 = (2.*FF2func1C + 2.*FF2func2C + 2.*FF2func3C - 2.*FF2func1 - 2.*FF2func2 - 2.*FF2func3)/apar**2./aperp**4.
+                                B_matrix4 = (2.*FF2func1C + 2.*FF2func2C + 2.*FF2func3C - 2.*FF2func1 - 2.*FF2func2 - 2.*FF2func3)/apar**2./aperp**4.
                                 
-                                return Bfunc3, EBfunc, EPfunc, Bfunc4
+                                return B_matrix1, B_matrix2, B_matrix3, B_matrix4
 
                         for j in range(int(nB)):
                                 kc1 = kB[new_triag[0][j]]
@@ -413,18 +433,18 @@ class full_shape_spectra(Likelihood_prior):
                                 Nk123 = ((kc1+dk1/2.)**2. - (kc1-dk1/2.)**2.)*((kc2+dk2/2.)**2. - (kc2-dk2/2.)**2.)*((kc3+dk3/2.)**2. - (kc3-dk3/2.)**2.)/8.
                                 
                                 # Compute matrices
-                                mat4, mat5, mat6, mat7 = Bk_matrices(*self.mesh_mu,kc1=kc1,kc2=kc2,kc3=kc3,apar=apar,aperp=aperp)
+                                B_matrix1, B_matrix2, B_matrix3, B_matrix4 = B_matrices(*self.bk_utils.mesh_mu,kc1=kc1,kc2=kc2,kc3=kc3,apar=apar,aperp=aperp)
                                 
                                 # Sum over angles to compute B0
-                                B0[j] = np.matmul(np.matmul(np.matmul(np.matmul(np.matmul(mat4,self.gauss_w2)/2.,self.gauss_w2)/2.,self.gauss_w),self.gauss_w),self.gauss_w)/Nk123
+                                B0[j] = np.matmul(np.matmul(np.matmul(np.matmul(np.matmul(B_matrix1,self.bk_utils.gauss_w2)/2.,self.bk_utils.gauss_w2)/2.,self.bk_utils.gauss_w),self.bk_utils.gauss_w),self.bk_utils.gauss_w)/Nk123
 
                                 # Add to output array
                                 theory_minus_data[3*nP + nQ + j] = B0[j]*dataset.discreteness_weights[j] - dataset.B0[j]
                                 
                                 # Update nuisance parameter covariance
-                                derivB_Pshot = np.matmul(np.matmul(np.matmul(np.matmul(np.matmul(mat6,self.gauss_w2)/2.,self.gauss_w2)/2.,self.gauss_w),self.gauss_w),self.gauss_w)/Nk123
-                                derivB_Bshot = np.matmul(np.matmul(np.matmul(np.matmul(np.matmul(mat5,self.gauss_w2)/2.,self.gauss_w2)/2.,self.gauss_w),self.gauss_w),self.gauss_w)/Nk123
-                                derivB_c1 = np.matmul(np.matmul(np.matmul(np.matmul(np.matmul(mat7,self.gauss_w2)/2.,self.gauss_w2)/2.,self.gauss_w),self.gauss_w),self.gauss_w)/Nk123
+                                derivB_Pshot = np.matmul(np.matmul(np.matmul(np.matmul(np.matmul(B_matrix3,self.bk_utils.gauss_w2)/2.,self.bk_utils.gauss_w2)/2.,self.bk_utils.gauss_w),self.bk_utils.gauss_w),self.bk_utils.gauss_w)/Nk123
+                                derivB_Bshot = np.matmul(np.matmul(np.matmul(np.matmul(np.matmul(B_matrix2,self.bk_utils.gauss_w2)/2.,self.bk_utils.gauss_w2)/2.,self.bk_utils.gauss_w),self.bk_utils.gauss_w),self.bk_utils.gauss_w)/Nk123
+                                derivB_c1 = np.matmul(np.matmul(np.matmul(np.matmul(np.matmul(B_matrix4,self.bk_utils.gauss_w2)/2.,self.bk_utils.gauss_w2)/2.,self.bk_utils.gauss_w),self.bk_utils.gauss_w),self.bk_utils.gauss_w)/Nk123
 
                                 cov_Pshot[3*nP + nQ + j] = derivB_Pshot
                                 cov_Bshot[3*nP + nQ + j] = derivB_Bshot		
