@@ -3,7 +3,7 @@ from montepython.likelihood_class import Likelihood_prior
 from scipy import interpolate
 import scipy.integrate as integrate
 from numpy import log, exp, sin, cos
-from fs_utils import Datasets, BkUtils
+from fs_utils import Datasets, BkUtils, PkTheory
 
 class full_shape_spectra(Likelihood_prior):
 
@@ -50,7 +50,7 @@ class full_shape_spectra(Likelihood_prior):
                 ## Define parameter mean and variances    
                 psh = 3500. # scale for stochastic parameters    
                 # Means
-                bGamma3 = 23.*(b1-1.)/42.
+                mean_bGamma3 = 23.*(b1-1.)/42.
                 Pshot = 0.
                 Bshot = 1.
                 c1 = 0.
@@ -87,7 +87,7 @@ class full_shape_spectra(Likelihood_prior):
                 
                 # Create output arrays
                 theory_minus_data = np.zeros(3*nP+nB+nQ+nAP)
-                cov_bGamma3, cov_Pshot, cov_Bshot, cov_c1, cov_a0, cov_a2, cov_cs0, cov_cs2, cov_cs4, cov_b4 = [np.zeros(3*nP+nB+nQ+nAP) for _ in range(10)]
+                deriv_bGamma3, deriv_Pshot, deriv_Bshot, deriv_c1, deriv_a0, deriv_a2, deriv_cs0, deriv_cs2, deriv_cs4, deriv_b4 = [np.zeros(3*nP+nB+nQ+nAP) for _ in range(10)]
 
                 if self.bin_integration_P:
                         k_grid = np.linspace(log(1.e-4),log(max(dataset.kPQ)+0.01),100)
@@ -101,200 +101,52 @@ class full_shape_spectra(Likelihood_prior):
                 #### Pk
                 if self.use_P:
 
-                        # Define k binning, depending on whether we include bin integration
+                        # Define PkTheory class, used to compute power spectra and derivatives
+                        pk_theory = PkTheory(self, all_theory, h, norm, fz, k_grid, dataset.kPQ, nP, nQ)
                         
-                        class PkTheory(object):
-                                def __init__(self, options, all_theory, h, norm, fz, k_grid, kPQ, nP):
-                                        """Compute the theoretical power spectrum P(k) and parameter derivatives for a given cosmology."""
-                                        self.all_theory = all_theory
-                                        self.h = h
-                                        self.norm = norm
-                                        self.k_grid = k_grid
-                                        self.kPQ = kPQ
-                                        self.fz = fz
-                                        self.nP = nP
-                                        self.options = options
-                                        self.dataset = options.dataset
-                                
-                                def bin_integrator(self, input_table):
-                                        """If bin-integration is included, integrate the function defined in `inttab' over the binned k-space. Else, return the input table."""
-                                        
-                                        k_grid = self.k_grid
+                        # Compute theory model for Pl and add to (theory - data)
+                        P0, P2, P4 = pk_theory.compute_Pl_oneloop(b1, b2, bG2, mean_bGamma3, mean_cs0, mean_cs2, mean_cs4, mean_b4, a0, a2, psh, Pshot)
+                        theory_minus_data[0*nP:1*nP] = P0 - dataset.P0
+                        theory_minus_data[1*nP:2*nP] = P2 - dataset.P2
+                        theory_minus_data[2*nP:3*nP] = P4 - dataset.P4
 
-                                        if self.options.bin_integration_P:
-                                                f_int = interpolate.InterpolatedUnivariateSpline(k_grid,input_table,ext=3)
-                                                integrand = lambda k: exp(3.*k)*f_int(exp(k))
-                                                out = np.zeros(nPQ)
-                                                for i in range(nPQ):
-                                                        kmin = self.dataset.dkPQ*i+self.options.kminP
-                                                        kmax = self.dataset.dkPQ*(i+1)+self.options.kminP
-                                                        out[i] = integrate.quad(integrand, log(kmin), log(kmax))[0]*3./(kmax**3.-kmin**3.)
-                                                return out
-                                        else:
-                                                return input_table
-                                
-                                def compute_Pl_oneloop(self, b1, b2, bG2, cs0, cs2, cs4, b4, a0, a2, psh, Pshot):
-                                        """Compute the 1-loop power spectrum multipoles, given the bias parameters."""
-                                        
-                                        # Load quantities
-                                        all_theory = self.all_theory
-                                        norm = self.norm
-                                        h = self.h
-                                        fz = self.fz
-                                        k_grid = self.k_grid
-                                        
-                                        ## Compute P0, P2, P4 multipoles, integrating with respect to bins
-                                        P0 = self.bin_integrator((norm**2.*all_theory[15] +norm**4.*(all_theory[21])+ norm**1.*b1*all_theory[16] +norm**3.*b1*(all_theory[22]) + norm**0.*b1**2.*all_theory[17] +norm**2.*b1**2.*all_theory[23] + 0.25*norm**2.*b2**2.*all_theory[1] +b1*b2*norm**2.*all_theory[30]+ b2*norm**3.*all_theory[31] + b1*bG2*norm**2.*all_theory[32]+ bG2*norm**3.*all_theory[33] + b2*bG2*norm**2.*all_theory[4]+ bG2**2.*norm**2.*all_theory[5] + 2.*cs0*norm**2.*all_theory[11]/h**2. + (2.*bG2+0.8*bGamma3*norm)*norm**2.*(b1*all_theory[7]+norm*all_theory[8]))*h**3. + (psh)*Pshot + a0*(10**4)*(k_grid/0.5)**2.  + fz**2.*b4*k_grid**2.*(norm**2.*fz**2./9. + 2.*fz*b1*norm/7. + b1**2./5)*(35./8.)*all_theory[13]*h + a2*(1./3.)*(10.**4.)*(k_grid/0.45)**2.)
-                                        P2 = self.bin_integrator((norm**2.*all_theory[18] +  norm**4.*(all_theory[24])+ norm**1.*b1*all_theory[19] +norm**3.*b1*(all_theory[25]) + b1**2.*norm**2.*all_theory[26] +b1*b2*norm**2.*all_theory[34]+ b2*norm**3.*all_theory[35] + b1*bG2*norm**2.*all_theory[36]+ bG2*norm**3.*all_theory[37]  + 2.*cs2*norm**2.*all_theory[12]/h**2. + (2.*bG2+0.8*bGamma3*norm)*norm**3.*all_theory[9])*h**3. + fz**2.*b4*k_grid**2.*((norm**2.*fz**2.*70. + 165.*fz*b1*norm+99.*b1**2.)*4./693.)*(35./8.)*all_theory[13]*h + a2*(10.**4.)*(2./3.)*(k_grid/0.45)**2.)
-                                        P4 = self.bin_integrator((norm**2.*all_theory[20] + norm**4.*all_theory[27]+ b1*norm**3.*all_theory[28] + b1**2.*norm**2.*all_theory[29] + b2*norm**3.*all_theory[38] + bG2*norm**3.*all_theory[39]  +2.*cs4*norm**2.*all_theory[13]/h**2.)*h**3. + fz**2.*b4*k_grid**2.*(norm**2.*fz**2.*210./143. + 30.*fz*b1*norm/11.+b1**2.)*all_theory[13]*h)
-
-                                        return P0, P2, P4
-
-                                def _load_individual_derivatives(self, b1):
-                                        """Compute individual derivatives needed to construct Pl and Q0 derivatives. This preloads the quantities requiring bin integration."""
-
-                                        # Load quantities
-                                        all_theory = self.all_theory
-                                        norm = self.norm
-                                        h = self.h
-                                        fz = self.fz
-                                        k_grid = self.k_grid
-                                        
-                                        self.deriv0_bGamma3 = self.bin_integrator((0.8*norm)*norm**2.*(b1*all_theory[7]+norm*all_theory[8])*h**3.)
-                                        self.deriv2_bGamma3 = self.bin_integrator((0.8*norm)*norm**3.*all_theory[9]*h**3.)
-                                        self.deriv_cs0 = self.bin_integrator(2.*norm**2.*all_theory[11]*h**1.)
-                                        self.deriv_cs2 = self.bin_integrator(2.*norm**2.*all_theory[12]*h**1.)
-                                        self.deriv_cs4 = self.bin_integrator(2.*norm**2.*all_theory[13]*h**1.)
-                                        self.deriv_b4 = self.bin_integrator(fz**2.*k_grid**2.*all_theory[13]*h)
-
-                                def compute_Pl_derivatives(self, b1):
-                                        """Compute the derivatives of the power spectrum with respect to parameters entering the model linearly"""
-                                        
-                                        # Load quantities
-                                        norm = self.norm
-                                        h = self.h
-                                        fz = self.fz
-                                        kPQ = self.kPQ
-                                        
-                                        # Compute individual derivatives
-                                        if not hasattr(self, 'deriv0_bGamma3'):
-                                                self._load_individual_derivatives(b1)
-                                        
-                                        # Assemble stacked derivatives
-                                        cov_bGamma3P, cov_cs0P, cov_cs2P, cov_cs4P, cov_b4P, cov_PshotP, cov_a0P, cov_a2P = [np.zeros(3*nP) for _ in range(8)]
-
-                                        cov_bGamma3P[:nP] = self.deriv0_bGamma3[:nP]
-                                        cov_bGamma3P[nP:2*nP] = self.deriv2_bGamma3[:nP]
-
-                                        cov_cs0P[:nP] = self.deriv_cs0[:nP]
-                                        cov_cs2P[nP:2*nP] = self.deriv_cs2[:nP]
-                                        cov_cs4P[2*nP:3*nP] = self.deriv_cs4[:nP]
-
-                                        cov_b4P[:nP] = self.deriv_b4[:nP]*(norm**2.*fz**2./9. + 2.*fz*b1*norm/7. + b1**2./5)*(35./8.)
-                                        cov_b4P[nP:2*nP] = self.deriv_b4[:nP]*((norm**2.*fz**2.*70. + 165.*fz*b1*norm+99.*b1**2.)*4./693.)*(35./8.)
-                                        cov_b4P[2*nP:3*nP] = self.deriv_b4[:nP]*(norm**2.*fz**2.*210./143. + 30.*fz*b1*norm/11.+b1**2.)
-
-                                        cov_PshotP[:nP] = 1.
-                                        
-                                        cov_a0P[:nP] = (kPQ[:nP]/0.45)**2.
-                                        
-                                        cov_a2P[:nP] = (1./3.)*(kPQ[:nP]/0.45)**2.
-                                        cov_a2P[nP:2*nP] = (2./3.)*(kPQ[:nP]/0.45)**2.
+                        # Compute derivatives of Pl with respect to parameters
+                        deriv_bGamma3P, deriv_cs0P, deriv_cs2P, deriv_cs4P, deriv_b4P, deriv_PshotP, deriv_a0P, deriv_a2P = pk_theory.compute_Pl_derivatives(b1)
                         
-                                        
-                                        return cov_bGamma3P, cov_cs0P, cov_cs2P, cov_cs4P, cov_b4P, cov_PshotP, cov_a0P, cov_a2P
-
-                        pk_theory = PkTheory(self, all_theory, h, norm, fz, k_grid, dataset.kPQ, nP)
-
-                        # Compute theory model
-                        P0, P2, P4 = pk_theory.compute_Pl_oneloop(b1, b2, bG2, mean_cs0, mean_cs2, mean_cs4, mean_b4, a0, a2, psh, Pshot)
-
-                        # Compute derivatives
-                        cov_bGamma3P, cov_cs0P, cov_cs2P, cov_cs4P, cov_b4P, cov_PshotP, cov_a0P, cov_a2P = pk_theory.compute_Pl_derivatives(b1)
-
-                        def bin_integrator(input_table):
-                                """If bin-integration is included, integrate the function defined in `inttab' over the binned k-space. Else, return the input table."""
-                                
-                                if self.bin_integration_P:
-                                        f_int = interpolate.InterpolatedUnivariateSpline(k_grid,input_table,ext=3)
-                                        integrand = lambda k: exp(3.*k)*f_int(exp(k))
-                                        out = np.zeros(nPQ)
-                                        for i in range(nPQ):
-                                                kmin = self.dataset.dkPQ*i+self.kminP
-                                                kmax = self.dataset.dkPQ*(i+1)+self.kminP
-                                                out[i] = integrate.quad(integrand, log(kmin), log(kmax))[0]*3./(kmax**3.-kmin**3.)
-                                        return out
-                                else:
-                                        return input_table
-                                
-
-                        #P0 = bin_integrator((norm**2.*all_theory[15] +norm**4.*(all_theory[21])+ norm**1.*b1*all_theory[16] +norm**3.*b1*(all_theory[22]) + norm**0.*b1**2.*all_theory[17] +norm**2.*b1**2.*all_theory[23] + 0.25*norm**2.*b2**2.*all_theory[1] +b1*b2*norm**2.*all_theory[30]+ b2*norm**3.*all_theory[31] + b1*bG2*norm**2.*all_theory[32]+ bG2*norm**3.*all_theory[33] + b2*bG2*norm**2.*all_theory[4]+ bG2**2.*norm**2.*all_theory[5] + 2.*mean_cs0*norm**2.*all_theory[11]/h**2. + (2.*bG2+0.8*bGamma3*norm)*norm**2.*(b1*all_theory[7]+norm*all_theory[8]))*h**3. + (psh)*Pshot + a0*(10**4)*(k_grid/0.5)**2.  + fz**2.*mean_b4*k_grid**2.*(norm**2.*fz**2./9. + 2.*fz*b1*norm/7. + b1**2./5)*(35./8.)*all_theory[13]*h + a2*(1./3.)*(10.**4.)*(k_grid/0.45)**2.)
-                        #P2 = bin_integrator((norm**2.*all_theory[18] +  norm**4.*(all_theory[24])+ norm**1.*b1*all_theory[19] +norm**3.*b1*(all_theory[25]) + b1**2.*norm**2.*all_theory[26] +b1*b2*norm**2.*all_theory[34]+ b2*norm**3.*all_theory[35] + b1*bG2*norm**2.*all_theory[36]+ bG2*norm**3.*all_theory[37]  + 2.*mean_cs2*norm**2.*all_theory[12]/h**2. + (2.*bG2+0.8*bGamma3*norm)*norm**3.*all_theory[9])*h**3. + fz**2.*mean_b4*k_grid**2.*((norm**2.*fz**2.*70. + 165.*fz*b1*norm+99.*b1**2.)*4./693.)*(35./8.)*all_theory[13]*h + a2*(10.**4.)*(2./3.)*(k_grid/0.45)**2.)
-                        #P4 = bin_integrator((norm**2.*all_theory[20] + norm**4.*all_theory[27]+ b1*norm**3.*all_theory[28] + b1**2.*norm**2.*all_theory[29] + b2*norm**3.*all_theory[38] + bG2*norm**3.*all_theory[39]  +2.*mean_cs4*norm**2.*all_theory[13]/h**2.)*h**3. + fz**2.*mean_b4*k_grid**2.*(norm**2.*fz**2.*210./143. + 30.*fz*b1*norm/11.+b1**2.)*all_theory[13]*h)
-
-
-                        ## Add to (theory - data)
-                        theory_minus_data[:nP] = P0[:nP] - dataset.P0
-                        theory_minus_data[nP:2*nP] = P2[:nP] - dataset.P2
-                        theory_minus_data[2*nP:3*nP] = P4[:nP] - dataset.P4
-
-                        # Compute derivatives with respect to parameters
-                        #cov_bGamma3P, cov_cs0P, cov_cs2P, cov_cs4P, deriv_b4 = compute_Pl_derivatives(all_theory, h, norm, fz, b1, k_grid, nP)
-        
-                        deriv0_bGamma3 = bin_integrator((0.8*norm)*norm**2.*(b1*all_theory[7]+norm*all_theory[8])*h**3.)
-                        deriv2_bGamma3 = bin_integrator((0.8*norm)*norm**3.*all_theory[9]*h**3.)
-                        deriv_cs0 = bin_integrator(2.*norm**2.*all_theory[11]*h**1.)
-                        deriv_cs2 = bin_integrator(2.*norm**2.*all_theory[12]*h**1.)
-                        deriv_cs4 = bin_integrator(2.*norm**2.*all_theory[13]*h**1.)
-                        deriv_b4 = bin_integrator(fz**2.*k_grid**2.*all_theory[13]*h)
-
-                        ## Add to covariance matrix
-                        # P0
-                        #cov_bGamma3[:nP] = deriv0_bGamma3[:nP]
-                        #cov_cs0[:nP] = deriv_cs0[:nP]
-                        #cov_b4[:nP] = deriv_b4[:nP]*(norm**2.*fz**2./9. + 2.*fz*b1*norm/7. + b1**2./5)*(35./8.)
-                        #cov_Pshot[:nP] = 1.
-                        #cov_a0[:nP] = (dataset.kPQ[:nP]/0.45)**2.
-                        #cov_a2[:nP] = (1./3.)*(dataset.kPQ[:nP]/0.45)**2.
-                        
-                        # P2
-                        #cov_bGamma3[nP:2*nP] = deriv2_bGamma3[:nP]
-                        #cov_cs2[nP:2*nP] = deriv_cs2[:nP]
-                        #cov_b4[nP:2*nP] = deriv_b4[:nP]*((norm**2.*fz**2.*70. + 165.*fz*b1*norm+99.*b1**2.)*4./693.)*(35./8.)
-                        #cov_a2[nP:2*nP] = (2./3.)*(dataset.kPQ[:nP]/0.45)**2.
-                        
-                        # P4
-                        #cov_cs4[2*nP:3*nP] = deriv_cs4[:nP]
-                        #cov_b4[2*nP:3*nP] = deriv_b4[:nP]*(norm**2.*fz**2.*210./143. + 30.*fz*b1*norm/11.+b1**2.)
-                        
-                        # # Add to joint derivative vector
-                        cov_bGamma3[:3*nP] = cov_bGamma3P
-                        cov_cs0[:3*nP] = cov_cs0P
-                        cov_cs2[:3*nP] = cov_cs2P
-                        cov_cs4[:3*nP] = cov_cs4P
-                        cov_b4[:3*nP] = cov_b4P
-                        cov_Pshot[:3*nP] = cov_PshotP
-                        cov_a0[:3*nP] = cov_a0P
-                        cov_a2[:3*nP] = cov_a2P
+                        # Add to joint derivative vector
+                        deriv_bGamma3[:3*nP] = deriv_bGamma3P
+                        deriv_cs0[:3*nP] = deriv_cs0P
+                        deriv_cs2[:3*nP] = deriv_cs2P
+                        deriv_cs4[:3*nP] = deriv_cs4P
+                        deriv_b4[:3*nP] = deriv_b4P
+                        deriv_Pshot[:3*nP] = deriv_PshotP
+                        deriv_a0[:3*nP] = deriv_a0P
+                        deriv_a2[:3*nP] = deriv_a2P
                         
                 #### Q0
                 if self.use_Q:
-                        ## Compute from Pk
-                        Q0 = P0[nP:]-P2[nP:]/2.+3.*P4[nP:]/8.
+                        
+                        # Compute theoretical Q0 model and add to (theory - data)
+                        Q0 = pk_theory.compute_Q0_oneloop(b1, b2, bG2, mean_bGamma3, mean_cs0, mean_cs2, mean_cs4, mean_b4, a0, a2, psh, Pshot)
                         theory_minus_data[3*nP:3*nP+nQ] = Q0 - dataset.Q0
 
-                        ## Add to covariance matrix
-                        cov_bGamma3[3*nP:3*nP+nQ] = deriv0_bGamma3[nP:] - 1./2.*deriv2_bGamma3[nP:]
-                        cov_cs0[3*nP:3*nP+nQ] = deriv_cs0[nP:]
-                        cov_cs2[3*nP:3*nP+nQ] = -1./2.*deriv_cs2[nP:]
-                        cov_cs4[3*nP:3*nP+nQ] = 3./8.*deriv_cs4[nP:]
-                        cov_b4[3*nP:3*nP+nQ] = deriv_b4[nP:]*((norm**2.*fz**2./9. + 2.*fz*b1*norm/7. + b1**2./5)*(35./8.) - ((norm**2.*fz**2.*70. + 165.*fz*b1*norm+99.*b1**2.)*4./693.)*(35./8.)/2. +3.*(norm**2.*fz**2.*210./143. + 30.*fz*b1*norm/11.+b1**2.)/8.)
-                        cov_Pshot[3*nP:3*nP+nQ] = 1.
-                        cov_a0[3*nP:3*nP+nQ] = (dataset.kPQ[nP:]/0.45)**2.
+                        # Compute derivatives of Q0 with respect to parameters
+                        deriv_bGamma3Q, deriv_cs0Q, deriv_cs2Q, deriv_cs4Q, deriv_b4Q, deriv_PshotQ, deriv_a0Q, deriv_a2Q = pk_theory.compute_Q0_derivatives(b1)
+
+                        # Add to joint derivative vector
+                        deriv_bGamma3[3*nP:3*nP+nQ] = deriv_bGamma3Q
+                        deriv_cs0[3*nP:3*nP+nQ] = deriv_cs0Q
+                        deriv_cs2[3*nP:3*nP+nQ] = deriv_cs2Q
+                        deriv_cs4[3*nP:3*nP+nQ] = deriv_cs4Q
+                        deriv_b4[3*nP:3*nP+nQ] = deriv_b4Q
+                        deriv_Pshot[3*nP:3*nP+nQ] = deriv_PshotQ
+                        deriv_a0[3*nP:3*nP+nQ] = deriv_a0Q
+                        deriv_a2[3*nP:3*nP+nQ] = deriv_a2Q
 
                 #### AP
                 if self.use_AP:  
-                        # AP definitions  
+
+                        # Compute theoretical AP model and add to (theory - data)
                         A_par = self.rdHfid/(rs_th*Hz_th)
                         A_perp = self.rdDAfid/(rs_th/DA_th)
                         theory_minus_data[-2] = A_par - dataset.alphas[0]
@@ -302,6 +154,8 @@ class full_shape_spectra(Likelihood_prior):
 
                 #### Bispectrum
                 if self.use_B:
+
+                        print("NB: should move BkUtils into Bk class?")
 
                         # Define local variables
                         kB, dkB = dataset.kB, dataset.dkB
@@ -440,14 +294,14 @@ class full_shape_spectra(Likelihood_prior):
                                 derivB_Bshot = np.matmul(np.matmul(np.matmul(np.matmul(np.matmul(B_matrix2,self.bk_utils.gauss_w2)/2.,self.bk_utils.gauss_w2)/2.,self.bk_utils.gauss_w),self.bk_utils.gauss_w),self.bk_utils.gauss_w)/Nk123
                                 derivB_c1 = np.matmul(np.matmul(np.matmul(np.matmul(np.matmul(B_matrix4,self.bk_utils.gauss_w2)/2.,self.bk_utils.gauss_w2)/2.,self.bk_utils.gauss_w),self.bk_utils.gauss_w),self.bk_utils.gauss_w)/Nk123
 
-                                cov_Pshot[3*nP + nQ + j] = derivB_Pshot
-                                cov_Bshot[3*nP + nQ + j] = derivB_Bshot		
-                                cov_c1[3*nP + nQ + j] = derivB_c1
+                                deriv_Pshot[3*nP + nQ + j] = derivB_Pshot
+                                deriv_Bshot[3*nP + nQ + j] = derivB_Bshot		
+                                deriv_c1[3*nP + nQ + j] = derivB_c1
 
                 ### COMBINE AND COMPUTE LIKELIHOOD
 
                 # Assemble full covariance including nuisance parameter marginalizations
-                marg_cov = dataset.cov + std_bGamma3*np.outer(cov_bGamma3,cov_bGamma3) + std_Pshot**2.*np.outer(cov_Pshot,cov_Pshot) + std_a0**2.*np.outer(cov_a0,cov_a0) + std_a2**2.*np.outer(cov_a2,cov_a2) + std_cs4**2.*np.outer(cov_cs4,cov_cs4)+std_cs2**2.*np.outer(cov_cs2,cov_cs2)+std_cs0**2.*np.outer(cov_cs0,cov_cs0) + std_b4**2.*np.outer(cov_b4,cov_b4) + std_Bshot**2.*np.outer(cov_Bshot,cov_Bshot) + std_c1**2.*np.outer(cov_c1,cov_c1)
+                marg_cov = dataset.cov + std_bGamma3*np.outer(deriv_bGamma3,deriv_bGamma3) + std_Pshot**2.*np.outer(deriv_Pshot,deriv_Pshot) + std_a0**2.*np.outer(deriv_a0,deriv_a0) + std_a2**2.*np.outer(deriv_a2,deriv_a2) + std_cs4**2.*np.outer(deriv_cs4,deriv_cs4)+std_cs2**2.*np.outer(deriv_cs2,deriv_cs2)+std_cs0**2.*np.outer(deriv_cs0,deriv_cs0) + std_b4**2.*np.outer(deriv_b4,deriv_b4) + std_Bshot**2.*np.outer(deriv_Bshot,deriv_Bshot) + std_c1**2.*np.outer(deriv_c1,deriv_c1)
                 
                 # Compute chi2
                 chi2 = np.inner(theory_minus_data,np.inner(np.linalg.inv(marg_cov),theory_minus_data))
