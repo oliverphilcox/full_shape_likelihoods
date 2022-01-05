@@ -67,6 +67,7 @@ class full_shape_spectra(Likelihood_prior):
                 mean_c1, std_c1 = self.prior_c1
                 mean_a0, std_a0 = self.prior_a0
                 mean_a2, std_a2 = self.prior_a2
+                mean_bphi, std_bphi = self.prior_bphi
 
                 # Means
                 Pshot = 0.
@@ -115,7 +116,7 @@ class full_shape_spectra(Likelihood_prior):
                         pk_theory = PkTheory(self, all_theory, h, As, fNL, fNL2, norm, fz, k_grid, dataset.kPQ, nP, nQ, Tfunc(k_grid))
                         
                         # Compute theory model for Pl and add to (theory - data)
-                        P0, P2, P4 = pk_theory.compute_Pl_oneloop(b1, b2, bG2, mean_bGamma3, mean_cs0, mean_cs2, mean_cs4, mean_b4, mean_a0, mean_a2, self.inv_nbar, Pshot, bphi)
+                        P0, P2, P4 = pk_theory.compute_Pl_oneloop(b1, b2, bG2, mean_bGamma3, mean_cs0, mean_cs2, mean_cs4, mean_b4, mean_a0, mean_a2, self.inv_nbar, Pshot, mean_bphi)
                         theory_minus_data[0*nP:1*nP] = P0 - dataset.P0
                         theory_minus_data[1*nP:2*nP] = P2 - dataset.P2
                         theory_minus_data[2*nP:3*nP] = P4 - dataset.P4
@@ -138,7 +139,7 @@ class full_shape_spectra(Likelihood_prior):
                 if self.use_Q:
                         
                         # Compute theoretical Q0 model and add to (theory - data)
-                        Q0 = pk_theory.compute_Q0_oneloop(b1, b2, bG2, mean_bGamma3, mean_cs0, mean_cs2, mean_cs4, mean_b4, mean_a0, mean_a2, self.inv_nbar, Pshot, bphi)
+                        Q0 = pk_theory.compute_Q0_oneloop(b1, b2, bG2, mean_bGamma3, mean_cs0, mean_cs2, mean_cs4, mean_b4, mean_a0, mean_a2, self.inv_nbar, Pshot, mean_bphi)
                         theory_minus_data[3*nP:3*nP+nQ] = Q0 - dataset.Q0
 
                         # Compute derivatives of Q0 with respect to parameters
@@ -172,6 +173,20 @@ class full_shape_spectra(Likelihood_prior):
 
                 #### Bispectrum
                 if self.use_B:
+
+                        class BkTheory(object):
+                                def __init__(self, options):
+                                        """Compute the theoretical power spectrum P(k) and parameter derivatives for a given cosmology and set of nuisance parameters."""
+                                        self.options = options
+                                        self.dataset = options.dataset
+                                
+                                def compute_B0_tree(self, b1, b2, bG2):
+                                        """Compute the tree-level bispectrum, given the bias parameters."""
+            
+                                def compute_B0_derivatives(self, b1):
+                                        """Compute the derivatives of the power spectrum multipoles with respect to parameters entering the model linearly"""
+            
+                        bk_theory = BkTheory(self)
 
                         print("NB: should move BkUtils into Bk class?")
 
