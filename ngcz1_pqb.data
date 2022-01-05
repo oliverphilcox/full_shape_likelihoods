@@ -1,0 +1,49 @@
+ngcz1_pqb.data_directory = data.path['data']
+ngcz1_pqb.measurements_b_file = 'boss_bisp_files/boss_bisp_closed_ngc_z1.dat'
+ngcz1_pqb.measurements_p_file = 'boss_noW/boss_pk_ngc_z1.dat'
+#ngcz1_pqb.measurements_b_file = 'boss_bisp_files/patchy_bisp_closed_ngc_z1.dat'
+#ngcz1_pqb.measurements_p_file = 'boss_noW/mean_pk_ngc_z1.dat'
+ngcz1_pqb.weights_file = 'boss_bisp_files/ngcz1_weights_bk.dat'
+ngcz1_pqb.covmat_file = 'boss_bisp_files/cov_closed_pqbb_ngc_z1.dat'
+ngcz1_pqb.alpha_means = 'ngc_z1/alpha_means.dat'
+
+
+ngcz1_pqb.rdHfid = 0.040872046001833195
+ngcz1_pqb.rdDAfid = 0.13325653008234437
+
+ngcz1_pqb.covrescale = 1.
+
+ngcz1_pqb.ksize1 = 78
+ngcz1_pqb.z = 0.38
+
+ngcz1_pqb.kmaxpl = 0.20
+ngcz1_pqb.kmax2 = 0.4
+ngcz1_pqb.kmin2 = 0.01
+
+#ngcz1_pqb.cross = False
+ngcz1_pqb.cross = True
+#ngcz1_pqb.binningPk = False
+ngcz1_pqb.binningPk = True
+
+ngcz1_pqb.ksize = 7
+ngcz1_pqb.ntriag = 62
+ngcz1_pqb.kmin = 0.015
+ngcz1_pqb.kmax = 0.075
+ngcz1_pqb.kmsMpc = 3.33564095198145e-6
+ngcz1_pqb.hfid = 0.676
+ngcz1_pqb.dafid = 1108.8090636654
+ngcz1_pqb.hzfid = 82.9281
+#ngcz1_pqb.use_nuisance =['b^{(3)}_1','b^{(3)}_2','b^{(3)}_{G_2}']
+
+ngcz1_pqb.use_nuisance =['b^{(3)}_1','b^{(3)}_2','b^{(3)}_{G_2}','f_{NL}']
+#ngcz1_pqb.use_nuisance =['b^{(1)}_1','b^{(1)}_2','b^{(1)}_{G_2}','P^{(1)}_{shot}','B^{(1)}_{shot}']
+#ngcz1_pqb.use_nuisance =['b^{(3)}_1','b^{(3)}_2','b^{(3)}_{G_2}','c1','P_{shot}','B_{shot}','f_{NL}']
+
+#ngcz1_pqb.dafid = 1486.9604106889594
+#ngcz1_pqb.hzfid = 91.39727080913846
+#ngcz1_pqb.use_nuisance = ['b_1','b_2','b_G_2','c1','P_{shot}','B_{shot}']
+
+#ngcz1_pqb.use_nuisance = ['norm','b_1','b_2','b_G_2','P_{shot}']
+#ngcz1_pqb.use_nuisance = ['norm','b_1','b_2','b_G_2','c^2_{0}','c^2_{2}','a_0','b_4','P_{shot}']
+##ptc_hexa.use_nuisance = ['norm','b_1','b_2','b_G_2','b_{Gamma_3}','c^2_{0}','c^2_{2}','b_4']
+##ptc_hexa.use_nuisance = ['norm','b_1','b_2','b_G_2','c^2_{0}','c^2_{2}','c^2_{4}','b_4']
