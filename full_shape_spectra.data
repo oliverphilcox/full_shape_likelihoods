@@ -28,7 +28,7 @@ full_shape_spectra.rdDAfid = 0.13325653008234437
 
 ## Other power spectrum parameters
 # include integration in k-bins
-full_shape_spectra.bin_integration_Pk = True
+full_shape_spectra.bin_integration_P = True
 # kmin for P_l(k)
 full_shape_spectra.kminP = 0.01
 # kmax for P_l(k)
