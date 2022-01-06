@@ -1,8 +1,5 @@
 #------Experiments to test (separated with commas)-----
 
-from montepython_public.montepython.likelihoods.full_shape_spectra import full_shape_spectra
-
-
 data.experiments=['full_shape_spectra']
 
 #------ Settings for the over-sampling.
