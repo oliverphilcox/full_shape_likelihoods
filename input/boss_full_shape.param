@@ -1,0 +1,130 @@
+#------Experiments to test (separated with commas)-----
+
+from montepython_public.montepython.likelihoods.full_shape_spectra import full_shape_spectra
+
+
+data.experiments=['full_shape_spectra']
+
+#------ Settings for the over-sampling.
+# The first element will always be set to 1, for it is the sampling of the
+# cosmological parameters. The other numbers describe the over sampling of the
+# nuisance parameter space. This array must have the same dimension as the
+# number of blocks in your run (so, 1 for cosmological parameters, and then 1
+# for each experiment with varying nuisance parameters).
+# Note that when using Planck likelihoods, you definitely want to use [1, 4],
+# to oversample as much as possible the 14 nuisance parameters.
+# Remember to order manually the experiments from slowest to fastest (putting
+# Planck as the first set of experiments should be a safe bet, except if you
+# also have LSS experiments).
+# If you have experiments without nuisance, you do not need to specify an
+# additional entry in the over_sampling list (notice for instance that, out of
+# the three Planck likelihoods used, only Planck_highl requires nuisance
+# parameters, therefore over_sampling has a length of two (cosmology, plus one
+# set of nuisance).
+#------ Parameter list -------
+
+# data.parameters[class name] = [mean, min, max, 1-sigma, scale, role]
+# - if min max irrelevant, put to None
+# - if fixed, put 1-sigma to 0
+# - if scale irrelevant, put to 1, otherwise to the appropriate factor
+# - role is either 'cosmo', 'nuisance' or 'derived'. You should put the derived
+# parameters at the end, and in case you are using the `-j fast` Cholesky
+# decomposition, you should order your nuisance parameters from slowest to
+# fastest.
+
+data.over_sampling=[1, 3]
+
+### Cosmological parameters list
+# data.parameters['omega_b']      = [ 2.237,   None, None,  4.7471e-02, 0.01, 'cosmo']
+data.parameters['omega_cdm']      = [ 0.11711,   None, None,  0., 1, 'cosmo']# 0.05
+data.parameters['h']      = [ 0.7,   None, None,  0.0, 1, 'cosmo'] #0.05
+data.parameters['ln10^{10}A_s'] = [  3.0447,   None, None,      0.0,    1, 'cosmo']#0.015
+# data.parameters['n_s']      = [ 0.96,   None, None,  0.03, 1, 'cosmo']
+# data.parameters['m_ncdm']      = [ 9.774896e-02,   0.06, 0.18,  0.05, 1, 'cosmo']
+
+### Primordial non-Gaussianity
+data.parameters['f^{eq}_{NL}']         = [ 0,    None,  None,   0,     1,'nuisance']
+data.parameters['f^{orth}_{NL}']         = [ 0,    None,  None,   0,     1,'nuisance']
+
+### Sound horizon rescaling
+data.parameters['alpha_{r_s}'] = [ 1.0,   None, None,  0.0, 1, 'nuisance']
+
+### Fixed Cosmological Parameters
+# data.cosmo_arguments['A_s'] = 2.1444e-9
+data.cosmo_arguments['omega_b'] = 0.02237
+data.cosmo_arguments['n_s'] = 0.9649
+# data.cosmo_arguments['h'] = 0.7
+# data.cosmo_arguments['omega_cdm'] = 0.11711
+
+# Nuisance parameter list, same call, except the name does not have to be a class name
+
+### Nuisance parameters for BOSS Pk/Q0/Bk/AP data
+data.parameters['b^{(1)}_1']         = [ 1.99,    None,  None,     0.1,     1,'nuisance']
+data.parameters['b^{(1)}_2']         = [ 0.24,    None,  None,     0.5,     1,'nuisance']
+data.parameters['b^{(1)}_{G_2}']         = [ -0.27,    None,  None,     0.5,     1,'nuisance']
+
+data.parameters['b^{(2)}_1']         = [  2.0698,    None,  4.,     8.9879e-02,     1,'nuisance']
+data.parameters['b^{(2)}_2']         = [ -1.7563,    -1,  -1,     1.8779,     1,'nuisance']
+data.parameters['b^{(2)}_{G_2}']         = [  1.9468e-01,    -1,  -1,     6.6736e-01,     1,'nuisance']
+
+data.parameters['b^{(3)}_1']         = [ 1.8682,    None,  4.,     0.01,     1,'nuisance'] #4.4482e-02
+data.parameters['b^{(3)}_2']         = [ -2.1708,    -1,  -1,     0,     1,'nuisance'] #7.6930e-01
+data.parameters['b^{(3)}_{G_2}']         = [ -9.1663e-02,    -1,  -1,     0,     1,'nuisance'] #3.3288e-01
+
+data.parameters['b^{(4)}_1']         = [  1.8797,    None,  4.,     7.7179e-02,     1,'nuisance']
+data.parameters['b^{(4)}_2']         = [ -3.2115,    -1,  -1,     1.6206,     1,'nuisance']
+data.parameters['b^{(4)}_{G_2}']         = [ 7.5104e-01,    -1,  -1,    6.4725e-01,     1,'nuisance']
+
+# Derived parameters
+
+#data.parameters['z_reio']          = [1, None, None, 0,     1,   'derived']
+data.parameters['Omega_m']    = [1, None, None, 0,     1,   'derived']
+#data.parameters['YHe']             = [1, None, None, 0,     1,   'derived']
+data.parameters['H0']              = [0, None, None, 0,     1,   'derived']
+#data.parameters['A_s']             = [0, None, None, 0,  1e-9,   'derived']
+data.parameters['sigma8']          = [0, None, None, 0,     1,   'derived']
+
+# Other cosmo parameters (fixed parameters, precision parameters, etc.)
+
+#data.cosmo_arguments['sBBN file'] = data.path['cosmo']+'/bbn/sBBN.dat'
+data.cosmo_arguments['k_pivot'] = 0.05
+data.cosmo_arguments['output'] = 'mPk'
+#data.cosmo_arguments['z_reio'] = 10.
+data.cosmo_arguments['tau_reio'] = 0.05
+data.cosmo_arguments['P_k_max_h/Mpc'] = 100.
+data.cosmo_arguments['YHe'] = 0.2454
+data.cosmo_arguments['non linear'] = 'PT'
+data.cosmo_arguments['FFTLog mode'] = 'FAST'
+#data.cosmo_arguments['FFTLog mode'] = 'Normal'
+data.cosmo_arguments['IR resummation'] = ' Yes '
+data.cosmo_arguments['Bias tracers'] = ' Yes '
+data.cosmo_arguments['RSD'] = ' Yes '
+data.cosmo_arguments['z_pk'] = '0.38, 0.61'
+data.cosmo_arguments['AP'] = ' Yes '
+data.cosmo_arguments['Omfid'] = 0.31
+
+# The base model features two massless
+# and one massive neutrino with m=0.06eV.
+# The settings below ensures that Neff=3.046
+# and m/omega = 93.14 eV
+data.cosmo_arguments['N_ur'] = 2.0328
+data.cosmo_arguments['N_ncdm'] = 1
+data.cosmo_arguments['m_ncdm'] = 0.06
+data.cosmo_arguments['T_ncdm'] = 0.71611
+
+# These two are required to get sigma8 as a derived parameter 
+# (class must compute the P(k) until sufficient k)
+#data.cosmo_arguments['output'] = 'mPk'
+#data.cosmo_arguments['P_k_max_h/Mpc'] = 1.
+
+#------ Mcmc parameters ----
+
+data.N=10
+data.write_step=5
+
+#------ Likelihood parameters ----
+# Here we choose which datasets to use (P0/P2/P4, Q0, B0, AP)
+full_shape_spectra.use_P = True
+full_shape_spectra.use_Q = True
+full_shape_spectra.use_B = True
+full_shape_spectra.use_AP = True
