@@ -13,4 +13,4 @@ Also included are measurements of each of the above data-sets for the BOSS surve
 - Giovanni Cabass (IAS)
 - [Oliver Philcox](mailto:ohep2@cantab.ac.uk) (Princeton / IAS)
 
-***Coming soon: extension to the bispectrum multipoles and primordial non-Gaussianity***
+***Coming soon:*** *extension to the bispectrum multipoles and primordial non-Gaussianity*
