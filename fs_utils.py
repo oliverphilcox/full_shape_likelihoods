@@ -9,6 +9,9 @@ class Datasets(object):
         def __init__(self, options):
                 """Load Pk, Q0 and B0 data from file, as well as covariance matrix. The `options' argument is a dictionary of options specifying file names etc."""
                 
+                # Count number of redshift bins
+                self.nz = len(options.z)
+
                 # Load datasets
                 if options.use_Q and not options.use_P:
                         raise Exception("Cannot use Q0 without power spectra!")
@@ -30,7 +33,16 @@ class Datasets(object):
                 """Load power spectrum multipole dataset, optionally including Q0"""
                 
                 # Load raw Pk measurements
-                k_init,P0_init,P2_init,P4_init=np.loadtxt(os.path.join(options.data_directory, options.P_measurements), skiprows = 0, unpack=True)
+                P0_init, P2_init, P4_init = [],[],[]
+                for zi in range(self.nz):
+                        data=np.loadtxt(os.path.join(options.data_directory, options.P_measurements[zi]), skiprows = 0, unpack=True)
+                        k_init = data[0]
+                        P0_init.append(data[1])
+                        P2_init.append(data[2])
+                        P4_init.append(data[3])
+                P0_init = np.asarray(P0_init)
+                P2_init = np.asarray(P2_init)
+                P4_init = np.asarray(P4_init)
 
                 # Count number of P bins (nP) and Q bins (nQ)
                 self.nP_init = len(k_init)
@@ -49,29 +61,35 @@ class Datasets(object):
                 # Filter k and P_ell to correct bins
                 self.kPQ = k_init[self.omitP:self.omitP+self.nPQ]
                 self.dkPQ = self.kPQ[1]-self.kPQ[0] # bin width
-                P0 = P0_init[self.omitP:self.omitP+self.nPQ]
-                P2 = P2_init[self.omitP:self.omitP+self.nPQ]
-                P4 = P4_init[self.omitP:self.omitP+self.nPQ]
+                P0 = P0_init[:,self.omitP:self.omitP+self.nPQ]
+                P2 = P2_init[:,self.omitP:self.omitP+self.nPQ]
+                P4 = P4_init[:,self.omitP:self.omitP+self.nPQ]
 
                 # Define data vectors
-                self.P0 = P0[:self.nP]
-                self.P2 = P2[:self.nP]
-                self.P4 = P4[:self.nP]
+                self.P0 = P0[:,:self.nP]
+                self.P2 = P2[:,:self.nP]
+                self.P4 = P4[:,:self.nP]
 
                 # Compute Q0 from Pk0 measurements
                 if options.use_Q:
-                        self.Q0 = P0[self.nP:]-1./2.*P2[self.nP:]+3./8.*P4[self.nP:]
+                        self.Q0 = P0[:,self.nP:]-1./2.*P2[:,self.nP:]+3./8.*P4[:,self.nP:]
 
         def load_bispectrum(self, options):
                 """Load bispectrum dataset."""
                 
-                # Load discreteness weights from file
-                self.discreteness_weights = np.loadtxt(os.path.join(options.data_directory, options.discreteness_weights_file), dtype=np.float64)
+                # Load discreteness weights and bispectra from file
+                discreteness_weights, B0 = [],[]
+                
+                for zi in range(self.nz):
+                        discreteness_weights.append(np.asarray(np.loadtxt(os.path.join(options.data_directory, options.discreteness_weights_file[zi]), dtype=np.float64)))
+                        data = np.loadtxt(os.path.join(options.data_directory, options.B_measurements[zi]), dtype=np.float64, unpack=True)
+                        khere, khere2, khere3 = data[:3]
+                        B0.append(data[3])
+                self.discreteness_weights = np.asarray(discreteness_weights)
+                self.B0 = np.asarray(B0)
         
-                # Load bispectrum measurements
-                khere, khere2, khere3, self.B0, _ = np.loadtxt(os.path.join(options.data_directory, options.B_measurements), dtype=np.float64, unpack=True)
-                assert len(self.B0)==len(self.discreteness_weights), "Number of bispectra bins must match number of weights!"
-                self.nB = len(self.B0)
+                assert len(self.B0[0])==len(self.discreteness_weights[0]), "Number of bispectra bins must match number of weights!"
+                self.nB = len(self.B0[0])
 
                 # 1D triangle centers
                 self.kB = np.linspace(options.kminB,options.kmaxB,options.ksizeB)
@@ -83,14 +101,20 @@ class Datasets(object):
         def load_AP(self, options):
                 """Load Alcock-Paczynski dataset."""
                 
-                self.alphas = np.loadtxt(os.path.join(options.data_directory, options.AP_measurements))
+                alphas = []
+                for zi in range(self.nz):
+                        alphas.append(np.loadtxt(os.path.join(options.data_directory, options.AP_measurements[zi]), dtype=np.float64))
+                self.alphas = np.asarray(alphas)
                 self.nAP = 2
 
         def load_covariance(self, options):
                 """Load in the covariance matrix, filtered to the required bins and datasets [with the ordering P0, P2, P4, Q0, B0, AP]."""
                 
                 # Load full covariance matrix
-                cov1 = np.loadtxt(os.path.join(options.data_directory, options.covmat_file),dtype=np.float64)
+                cov1 = []
+                for zi in range(self.nz):
+                        cov1.append(np.loadtxt(os.path.join(options.data_directory, options.covmat_file[zi]),dtype=np.float64))
+                cov1 = np.asarray(cov1)
 
                 # Define which bins we use
                 filt = []
@@ -107,13 +131,14 @@ class Datasets(object):
                 filt= np.concatenate(filt)
                 
                 # Filter to the correct bins we want
-                self.cov = np.zeros((len(filt),len(filt)),dtype='float64')
-                for i,index in enumerate(filt):
-                        for j,jndex in enumerate(filt):
-                                self.cov[i,j] = cov1[index,jndex]
+                self.cov = np.zeros((self.nz, len(filt),len(filt)),dtype='float64')
+                for zi in range(self.nz):
+                        for i,index in enumerate(filt):
+                                for j,jndex in enumerate(filt):
+                                        self.cov[zi, i, j] = cov1[zi, index, jndex]
 
                 # Compute matrix determinant for later use
-                self.logdetcov = np.linalg.slogdet(self.cov)[1]
+                self.logdetcov = np.asarray([np.linalg.slogdet(self.cov[zi])[1] for zi in range(self.nz)])
 
 class PkTheory(object):
         def __init__(self, options, all_theory, h, As, fNL_eq, fNL_orth, norm, fz, k_grid, kPQ, nP, nQ, Tk):
@@ -300,7 +325,7 @@ class PkTheory(object):
                 return deriv_bGamma3Q, deriv_cs0Q, deriv_cs2Q, deriv_cs4Q, deriv_b4Q, deriv_PshotQ, deriv_a0Q, deriv_a2Q, deriv_bphiQ
 
 class BkTheory(object):
-        def __init__(self, options, As, fNL_eq, fNL_orth, apar, aperp, fz, r_bao, k_grid, Pk_lin_table1, Pk_lin_table2, gauss_w, gauss_w2, mesh_mu, nB):
+        def __init__(self, options, As, fNL_eq, fNL_orth, apar, aperp, fz, r_bao, k_grid, Pk_lin_table1, Pk_lin_table2, inv_nbar, gauss_w, gauss_w2, mesh_mu, nB):
                 """Compute the theoretical power spectrum P(k) and parameter derivatives for a given cosmology and set of nuisance parameters."""
                 
                 # Load variables
@@ -312,6 +337,7 @@ class BkTheory(object):
                 self.aperp = aperp
                 self.fz = fz
                 self.r_bao = r_bao
+                self.inv_nbar = inv_nbar
                 self.gauss_w = gauss_w
                 self.gauss_w2 = gauss_w2
                 self.mesh_mu = mesh_mu
@@ -389,7 +415,7 @@ class BkTheory(object):
                 fNL_orth = self.fNL_orth
                 apar = self.apar
                 aperp = self.aperp
-                inv_nbar = self.options.inv_nbar
+                inv_nbar = self.inv_nbar
 
                 # Bin centers
                 ddk1 = dk1/2.
@@ -482,7 +508,7 @@ class BkTheory(object):
                         B0_matrix, deriv_Pshot_matrix, deriv_Bshot_matrix, deriv_c1_matrix = self._compute_B_matrices(beta,b1,b2,bG2,Pshot,Bshot,kc1,kc2,kc3,dk1,dk2,dk3,*self.mesh_mu)
 
                         # Integrate over bins to compute B0
-                        B0[j] = self._bin_integrate(B0_matrix)/Nk123*self.dataset.discreteness_weights[j]
+                        B0[j] = self._bin_integrate(B0_matrix)/Nk123
                         
                         # Update nuisance parameter covariance
                         deriv_PshotB[j] = self._bin_integrate(deriv_Pshot_matrix)/Nk123
