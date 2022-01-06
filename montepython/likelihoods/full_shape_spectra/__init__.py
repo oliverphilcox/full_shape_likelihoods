@@ -45,7 +45,7 @@ class full_shape_spectra(Likelihood_prior):
                 # Summarize input parameters
                 print("#################################################\n")
                 print("### Full shape likelihood\n")
-                print("Redshifts: %s"%(['%.2f'%zz for zz in self.z]))
+                print("Redshifts: %s"%(['%.2f'%zz for zz in self.z[:self.nz]]))
                 print("Power Spectrum: %s"%self.use_P)
                 print("Q0: %s"%self.use_Q)
                 print("Bispectra: %s"%self.use_B)
@@ -80,8 +80,7 @@ class full_shape_spectra(Likelihood_prior):
                 fNL_orth = (data.mcmc_parameters['f^{orth}_{NL}']['current'] * data.mcmc_parameters['f^{orth}_{NL}']['scale'])
                 alpha_rs = (data.mcmc_parameters['alpha_{r_s}']['current'] * data.mcmc_parameters['alpha_{r_s}']['scale'])
 
-                z = self.z
-                self.nz = len(z)
+                z = self.z[:self.nz]
                 fz = np.asarray([cosmo.scale_independent_growth_factor_f(zz) for zz in z])
                 
                 # Load non-linear nuisance parameters

@@ -10,7 +10,7 @@ class Datasets(object):
                 """Load Pk, Q0 and B0 data from file, as well as covariance matrix. The `options' argument is a dictionary of options specifying file names etc."""
                 
                 # Count number of redshift bins
-                self.nz = len(options.z)
+                self.nz = options.nz
 
                 # Load datasets
                 if options.use_Q and not options.use_P:

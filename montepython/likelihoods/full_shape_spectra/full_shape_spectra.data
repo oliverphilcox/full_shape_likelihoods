@@ -1,12 +1,11 @@
 # Nuisance parameters (need one set of biases per bin)
-from montepython_public.montepython.likelihoods.full_shape_spectra import full_shape_spectra
-
 
 full_shape_spectra.use_nuisance =['b^{(1)}_1','b^{(1)}_2','b^{(1)}_{G_2}','b^{(2)}_1','b^{(2)}_2','b^{(2)}_{G_2}','b^{(3)}_1','b^{(3)}_2','b^{(3)}_{G_2}','b^{(4)}_1','b^{(4)}_2','b^{(4)}_{G_2}','f^{eq}_{NL}','f^{orth}_{NL}','alpha_{r_s}']
 
 ## Sample
-# Redshift
+# Redshift and number of redshift slices to use (up to len(z))
 full_shape_spectra.z = [0.61, 0.61, 0.38, 0.38]
+full_shape_spectra.nz = 4
 # Approximate 1/nbar of survey
 full_shape_spectra.inv_nbar = [5000., 5000., 3500., 3500.]
 
