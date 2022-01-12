@@ -17,6 +17,9 @@ class Datasets(object):
                         raise Exception("Cannot use Q0 without power spectra!")
                 if options.use_P:
                         self.load_power_spectrum(options)
+                else:
+                        self.nP = 0
+                        self.nQ = 0
                 if options.use_B:
                         self.load_bispectrum(options)
                 else:

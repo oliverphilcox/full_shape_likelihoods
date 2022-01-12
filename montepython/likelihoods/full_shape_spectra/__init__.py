@@ -2,6 +2,9 @@ import numpy as np
 from montepython.likelihood_class import Likelihood_prior
 from scipy import interpolate
 from scipy.special.orthogonal import p_roots
+import os,sys
+path=os.path.dirname(os.path.realpath(__file__))
+sys.path.append(path)
 from fs_utils import Datasets, PkTheory, BkTheory
 
 class full_shape_spectra(Likelihood_prior):
@@ -117,11 +120,12 @@ class full_shape_spectra(Likelihood_prior):
                 theory_minus_data = np.zeros(3*nP+nB+nQ+nAP)
                 deriv_bGamma3, deriv_Pshot, deriv_Bshot, deriv_c1, deriv_a0, deriv_a2, deriv_cs0, deriv_cs2, deriv_cs4, deriv_b4, deriv_bphi, deriv_c1 = [np.zeros(3*nP+nB+nQ+nAP) for _ in range(12)]
                 
-                if self.bin_integration_P:
-                        k_grid = np.linspace(np.log(1.e-4),np.log(max(dataset.kPQ)+0.01),100)
-                        k_grid = np.exp(k_grid)
-                else:
-                        k_grid = dataset.kPQ
+                if self.use_P or self.use_B:
+                        if self.bin_integration_P:
+                                k_grid = np.linspace(np.log(1.e-4),np.log(max(dataset.kPQ)+0.01),100)
+                                k_grid = np.exp(k_grid)
+                        else:
+                                k_grid = dataset.kPQ
 
                 # Initialize output chi2
                 chi2 = 0.
@@ -129,14 +133,15 @@ class full_shape_spectra(Likelihood_prior):
                 # Iterate over redshift bins
                 for zi in range(self.nz):
 
-                        # Run CLASS-PT
-                        all_theory = cosmo.get_pk_mult(k_grid*h, z[zi], len(k_grid), no_wiggle = self.no_wiggle, alpha_rs = alpha_rs)
-
-                        # Load fNL utilities
-                        Pk_lin_table1 = -1.*norm**2.*(all_theory[10]/h**2./k_grid**2)*h**3
-                        Pk_lin_table2 = norm**2.*(all_theory[14])*h**3.
-                        P0int = interpolate.InterpolatedUnivariateSpline(k_grid,Pk_lin_table1,ext=3)
-                        Tfunc = lambda k: (P0int(k)/(As*2.*np.pi**2.*((k*h/0.05)**(cosmo.n_s()-1.))/k**3.))**0.5
+                        if self.use_P or self.use_B:
+                                # Run CLASS-PT
+                                all_theory = cosmo.get_pk_mult(k_grid*h, z[zi], len(k_grid), no_wiggle = self.no_wiggle, alpha_rs = alpha_rs)
+                                # Load fNL utilities
+                                Pk_lin_table1 = -1.*norm**2.*(all_theory[10]/h**2./k_grid**2)*h**3
+                                Pk_lin_table2 = norm**2.*(all_theory[14])*h**3.
+                                P0int = interpolate.InterpolatedUnivariateSpline(k_grid,Pk_lin_table1,ext=3)
+                                Tfunc = lambda k: (P0int(k)/(As*2.*np.pi**2.*((k*h/0.05)**(cosmo.n_s()-1.))/k**3.))**0.5
+                        
                         
                         ## Compute Pk
                         if self.use_P:
