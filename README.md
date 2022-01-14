@@ -11,8 +11,8 @@ The likelihoods make extensive use of the [CLASS-PT](https://github.com/michalyc
 In the ```data/``` directory, we include measurements of each of the above data-sets for the BOSS survey. Note that power spectra and bispectra do not include the survey window function; these are computed with the estimators of [Philcox 20](https://arxiv.org/abs/2012.09389), and [Philcox 21](https://arxiv.org/abs/2107.06287). We provide a sample ```.param``` file in the ```input/``` directory; this will reproduce the full BOSS analysis of [Philcox & Ivanov 21](https://arxiv.org/abs/2112.04515).
 
 ## Authors
+- [Oliver Philcox](mailto:ohep2@cantab.ac.uk) (Princeton / IAS)
 - Mikhail Ivanov (IAS)
 - Giovanni Cabass (IAS)
-- [Oliver Philcox](mailto:ohep2@cantab.ac.uk) (Princeton / IAS)
 
-***Coming soon:*** *extension to the bispectrum multipoles and primordial non-Gaussianity*
+***Coming soon:*** *extension to the bispectrum multipoles*
