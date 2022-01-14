@@ -4,7 +4,7 @@ This repository contains the [Montepython](https://github.com/brinckmann/montepy
 - Galaxy power spectrum multipoles (P0 / P2 / P4, see [Ivanov+19](https://arxiv.org/abs/1909.05277))
 - Galaxy real-space power spectrum proxy (Q0, see [Ivanov+21](https://arxiv.org/abs/2110.00006))
 - Galaxy BAO rescaling parameters (AP, see [Philcox+20](https://arxiv.org/abs/2002.04035))
-- Galaxy bispectrum monopole (B0, see [Philcox & Ivanov 21](https://arxiv.org/abs/2112.04515))
+- Galaxy bispectrum monopole (B0, see [Philcox & Ivanov 21](https://arxiv.org/abs/2112.04515) and Cabass+22 (coming soon))
 
 The likelihoods make extensive use of the [CLASS-PT](https://github.com/michalychforever/CLASS-PT) code [Chudaykin+20](https://arxiv.org/abs/2004.10607), which is an extension of the Boltzmann code CLASS.
 
