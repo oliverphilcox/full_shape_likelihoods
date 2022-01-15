@@ -17,12 +17,12 @@ full_shape_spectra.use_B = True
 
 # Measurements
 full_shape_spectra.data_directory = data.path['data']
-full_shape_spectra.P_measurements = ['boss_data/boss_pk_ngc_z3.dat','boss_data/boss_pk_sgc_z3.dat','boss_data/boss_pk_ngc_z1.dat','boss_data/boss_pk_sgc_z1.dat']
-full_shape_spectra.AP_measurements = ['boss_data/boss_alpha_ngc_z3.dat','boss_data/boss_alpha_sgc_z3.dat','boss_data/boss_alpha_ngc_z1.dat','boss_data/boss_alpha_sgc_z1.dat']
-full_shape_spectra.B_measurements = ['boss_data/boss_bk_ngc_z3.dat','boss_data/boss_bk_sgc_z3.dat','boss_data/boss_bk_ngc_z1.dat','boss_data/boss_bk_sgc_z1.dat']
+full_shape_spectra.P_measurements = ['data/boss_pk_ngc_z3.dat','data/boss_pk_sgc_z3.dat','data/boss_pk_ngc_z1.dat','data/boss_pk_sgc_z1.dat']
+full_shape_spectra.AP_measurements = ['data/boss_alpha_ngc_z3.dat','data/boss_alpha_sgc_z3.dat','data/boss_alpha_ngc_z1.dat','data/boss_alpha_sgc_z1.dat']
+full_shape_spectra.B_measurements = ['data/boss_bk_ngc_z3.dat','data/boss_bk_sgc_z3.dat','data/boss_bk_ngc_z1.dat','data/boss_bk_sgc_z1.dat']
 
 # Joint covariance matrix
-full_shape_spectra.covmat_file = ['boss_data/boss_cov_ngc_z3.dat','boss_data/boss_cov_sgc_z3.dat','boss_data/boss_cov_ngc_z1.dat','boss_data/boss_cov_sgc_z1.dat']
+full_shape_spectra.covmat_file = ['data/boss_cov_ngc_z3.dat','data/boss_cov_sgc_z3.dat','data/boss_cov_ngc_z1.dat','data/boss_cov_sgc_z1.dat']
 
 # Fiducial coordinates
 full_shape_spectra.h_fid = 0.676
@@ -46,7 +46,7 @@ full_shape_spectra.kmaxQ = 0.40
 full_shape_spectra.no_wiggle = False
 
 ## Other bispectrum parameters
-full_shape_spectra.discreteness_weights_file = ['boss_data/boss_bk_weights_ngc_z3.dat','boss_data/boss_bk_weights_sgc_z3.dat','boss_data/boss_bk_weights_ngc_z1.dat','boss_data/boss_bk_weights_sgc_z1.dat']
+full_shape_spectra.discreteness_weights_file = ['data/boss_bk_weights_ngc_z3.dat','data/boss_bk_weights_sgc_z3.dat','data/boss_bk_weights_ngc_z1.dat','data/boss_bk_weights_sgc_z1.dat']
 # kmin for B0
 full_shape_spectra.kminB = 0.015 
 # kmax for B0
