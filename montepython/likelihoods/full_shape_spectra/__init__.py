@@ -208,7 +208,7 @@ class full_shape_spectra(Likelihood_prior):
                                 r_bao = rs_th*h
 
                                 # Load the theory model class
-                                bk_theory = BkTheory(self, As, fNL_eq, fNL_orth, apar, aperp, fz[zi], r_bao, k_grid, T_func, Pk_lin_table1, Pk_lin_table2, self.inv_nbar[zi], self.gauss_w, self.gauss_w2, self.mesh_mu, nB)
+                                bk_theory = BkTheory(self, As, fNL_eq, fNL_orth, apar, aperp, fz[zi], r_bao, k_grid, Tfunc, Pk_lin_table1, Pk_lin_table2, self.inv_nbar[zi], self.gauss_w, self.gauss_w2, self.mesh_mu, nB)
 
                                 # Compute the tree-level bispectrum and parameter derivatives
                                 B0, deriv_PshotB, deriv_BshotB, deriv_c1B = bk_theory.compute_B0_tree_theory_derivs(b1[zi], b2[zi], bG2[zi], mean_c1[zi], mean_Pshot[zi], mean_Bshot[zi])
