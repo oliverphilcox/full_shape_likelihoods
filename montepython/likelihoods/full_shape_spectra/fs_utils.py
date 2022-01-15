@@ -327,7 +327,7 @@ class PkTheory(object):
                 return deriv_bGamma3Q, deriv_cs0Q, deriv_cs2Q, deriv_cs4Q, deriv_b4Q, deriv_PshotQ, deriv_a0Q, deriv_a2Q, deriv_bphiQ
 
 class BkTheory(object):
-        def __init__(self, options, As, fNL_eq, fNL_orth, apar, aperp, fz, r_bao, k_grid, Pk_lin_table1, Pk_lin_table2, inv_nbar, gauss_w, gauss_w2, mesh_mu, nB):
+        def __init__(self, options, As, fNL_eq, fNL_orth, apar, aperp, fz, r_bao, k_grid, Tfunc, Pk_lin_table1, Pk_lin_table2, inv_nbar, gauss_w, gauss_w2, mesh_mu, nB):
                 """Compute the theoretical power spectrum P(k) and parameter derivatives for a given cosmology and set of nuisance parameters."""
                 
                 # Load variables
@@ -347,6 +347,7 @@ class BkTheory(object):
                 self.k_grid = k_grid
                 
                 # Load fNL variables
+                self.Tfunc = Tfunc
                 self.Azeta = As*2.*np.pi**2.
                 self.Pk_lin_table1 = Pk_lin_table1
                 self.Pk_lin_table2 = Pk_lin_table2
