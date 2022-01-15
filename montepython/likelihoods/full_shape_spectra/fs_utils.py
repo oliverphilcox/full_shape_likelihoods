@@ -4,6 +4,7 @@ import numpy as np
 import os
 from scipy import interpolate
 import scipy.integrate as integrate
+import classy
 
 class Datasets(object):
         def __init__(self, options):
