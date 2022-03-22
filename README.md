@@ -15,4 +15,4 @@ In the ```data/``` directory, we include measurements of each of the above data-
 - Mikhail Ivanov (IAS)
 - Giovanni Cabass (IAS)
 
-***Coming soon:*** *extension to the bispectrum multipoles*
+***Coming soon:*** *extension to the bispectrum multipoles, one-loop bispectra, and local-type PNG*
