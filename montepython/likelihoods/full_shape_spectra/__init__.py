@@ -222,7 +222,7 @@ class full_shape_spectra(Likelihood_prior):
                                 deriv_c1[3*nP+nQ:3*nP+nQ+nB] = deriv_c1B
 
                         # Assemble full covariance including nuisance parameter marginalizations
-                        marg_cov = dataset.cov[zi]+std_bGamma3[zi]*np.outer(deriv_bGamma3,deriv_bGamma3)+std_cs0[zi]**2.*np.outer(deriv_cs0,deriv_cs0)+std_cs2[zi]**2.*np.outer(deriv_cs2,deriv_cs2)+std_cs4[zi]**2.*np.outer(deriv_cs4,deriv_cs4)+std_b4[zi]**2.*np.outer(deriv_b4,deriv_b4)+std_Pshot[zi]**2.*np.outer(deriv_Pshot,deriv_Pshot)+std_Bshot[zi]**2.*np.outer(deriv_Bshot,deriv_Bshot)+std_a0[zi]**2.*np.outer(deriv_a0,deriv_a0)+std_a2[zi]**2.*np.outer(deriv_a2,deriv_a2)+std_c1[zi]**2.*np.outer(deriv_c1,deriv_c1)+std_bphi[zi]**2.*np.outer(deriv_bphi,deriv_bphi)
+                        marg_cov = dataset.cov[zi]+std_bGamma3[zi]**2.*np.outer(deriv_bGamma3,deriv_bGamma3)+std_cs0[zi]**2.*np.outer(deriv_cs0,deriv_cs0)+std_cs2[zi]**2.*np.outer(deriv_cs2,deriv_cs2)+std_cs4[zi]**2.*np.outer(deriv_cs4,deriv_cs4)+std_b4[zi]**2.*np.outer(deriv_b4,deriv_b4)+std_Pshot[zi]**2.*np.outer(deriv_Pshot,deriv_Pshot)+std_Bshot[zi]**2.*np.outer(deriv_Bshot,deriv_Bshot)+std_a0[zi]**2.*np.outer(deriv_a0,deriv_a0)+std_a2[zi]**2.*np.outer(deriv_a2,deriv_a2)+std_c1[zi]**2.*np.outer(deriv_c1,deriv_c1)+std_bphi[zi]**2.*np.outer(deriv_bphi,deriv_bphi)
                         
                         # Compute chi2 from data and theory
                         chi2 += np.inner(theory_minus_data,np.inner(np.linalg.inv(marg_cov),theory_minus_data))
