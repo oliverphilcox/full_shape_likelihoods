@@ -99,6 +99,8 @@ data.cosmo_arguments['Bias tracers'] = ' Yes '
 data.cosmo_arguments['RSD'] = ' Yes '
 data.cosmo_arguments['z_pk'] = '0.38, 0.61'
 data.cosmo_arguments['AP'] = ' Yes '
+# Whether to include PNG?
+data.cosmo_arguments['PNG'] = 'No'
 data.cosmo_arguments['Omfid'] = 0.31
 
 # The base model features two massless
