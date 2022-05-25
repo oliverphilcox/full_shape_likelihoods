@@ -57,18 +57,22 @@ data.cosmo_arguments['n_s'] = 0.9649
 # Nuisance parameter list, same call, except the name does not have to be a class name
 
 ### Nuisance parameters for BOSS Pk/Q0/Bk/AP data
+# Nuisance parameters for first data chunk
 data.parameters['b^{(1)}_1']         = [ 1.99,    None,  None,     0.1,     1,'nuisance']
 data.parameters['b^{(1)}_2']         = [ 0.24,    None,  None,     0.5,     1,'nuisance']
 data.parameters['b^{(1)}_{G_2}']         = [ -0.27,    None,  None,     0.5,     1,'nuisance']
 
+# Nuisance parameters for second data chunk
 data.parameters['b^{(2)}_1']         = [  2.0698,    None,  4.,     0.1,     1,'nuisance']
 data.parameters['b^{(2)}_2']         = [ -1.7563,    -1,  -1,     1.8779,     0.5,'nuisance']
 data.parameters['b^{(2)}_{G_2}']         = [  1.9468e-01,    -1,  -1,     0.5,     1,'nuisance']
 
+# Nuisance parameters for third data chunk
 data.parameters['b^{(3)}_1']         = [ 1.8682,    None,  4.,     0.1,     1,'nuisance']
 data.parameters['b^{(3)}_2']         = [ -2.1708,    -1,  -1,     0.5,     1,'nuisance']
 data.parameters['b^{(3)}_{G_2}']         = [ -9.1663e-02,    -1,  -1,     0.5,     1,'nuisance'] 
 
+# Nuisance parameters for fourth data chunk
 data.parameters['b^{(4)}_1']         = [  1.8797,    None,  4.,     0.1,     1,'nuisance']
 data.parameters['b^{(4)}_2']         = [ -3.2115,    -1,  -1,     0.5,     1,'nuisance']
 data.parameters['b^{(4)}_{G_2}']         = [ 7.5104e-01,    -1,  -1,    0.5,     1,'nuisance']
