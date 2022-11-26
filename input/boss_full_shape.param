@@ -40,7 +40,7 @@ data.parameters['ln10^{10}A_s'] = [  3.0447,   None, None,      0.015,    1, 'co
 # data.parameters['m_ncdm']      = [ 9.774896e-02,   0.06, 0.18,  0.05, 1, 'cosmo']
 # data.parameters['M_tot'] =     [ 0.06, 0., 0.18,   0.1,  1, 'cosmo']
 
-### Primordial non-Gaussianity
+### Primordial non-Gaussianity (remember to turn on the 'PNG' switch below if using these)
 data.parameters['f^{eq}_{NL}']         = [ 0,    None,  None,   0,     1,'nuisance']
 data.parameters['f^{orth}_{NL}']         = [ 0,    None,  None,   0,     1,'nuisance']
 
@@ -58,24 +58,24 @@ data.cosmo_arguments['n_s'] = 0.9649
 
 ### Nuisance parameters for BOSS Pk/Q0/Bk/AP data
 # Nuisance parameters for first data chunk
-data.parameters['b^{(1)}_1']         = [ 1.99,    None,  None,     0.1,     1,'nuisance']
+data.parameters['b^{(1)}_1']         = [ 1.99,    1.,  4.,     0.1,     1,'nuisance']
 data.parameters['b^{(1)}_2']         = [ 0.24,    None,  None,     0.5,     1,'nuisance']
 data.parameters['b^{(1)}_{G_2}']         = [ -0.27,    None,  None,     0.5,     1,'nuisance']
 
 # Nuisance parameters for second data chunk
-data.parameters['b^{(2)}_1']         = [  2.0698,    None,  4.,     0.1,     1,'nuisance']
-data.parameters['b^{(2)}_2']         = [ -1.7563,    -1,  -1,     1.8779,     0.5,'nuisance']
-data.parameters['b^{(2)}_{G_2}']         = [  1.9468e-01,    -1,  -1,     0.5,     1,'nuisance']
+data.parameters['b^{(2)}_1']         = [  2.0698,    1.,  4.,     0.1,     1,'nuisance']
+data.parameters['b^{(2)}_2']         = [ -1.7563,    None,  None,     0.5,     1,'nuisance']
+data.parameters['b^{(2)}_{G_2}']         = [  1.9468e-01,    None,  None,     0.5,     1,'nuisance']
 
 # Nuisance parameters for third data chunk
-data.parameters['b^{(3)}_1']         = [ 1.8682,    None,  4.,     0.1,     1,'nuisance']
-data.parameters['b^{(3)}_2']         = [ -2.1708,    -1,  -1,     0.5,     1,'nuisance']
-data.parameters['b^{(3)}_{G_2}']         = [ -9.1663e-02,    -1,  -1,     0.5,     1,'nuisance'] 
+data.parameters['b^{(3)}_1']         = [ 1.8682,    1.,  4.,     0.1,     1,'nuisance']
+data.parameters['b^{(3)}_2']         = [ -2.1708,   None,  None,     0.5,     1,'nuisance']
+data.parameters['b^{(3)}_{G_2}']         = [ -9.1663e-02,    None,  None,     0.5,     1,'nuisance'] 
 
 # Nuisance parameters for fourth data chunk
-data.parameters['b^{(4)}_1']         = [  1.8797,    None,  4.,     0.1,     1,'nuisance']
-data.parameters['b^{(4)}_2']         = [ -3.2115,    -1,  -1,     0.5,     1,'nuisance']
-data.parameters['b^{(4)}_{G_2}']         = [ 7.5104e-01,    -1,  -1,    0.5,     1,'nuisance']
+data.parameters['b^{(4)}_1']         = [  1.8797,    1.,  4.,     0.1,     1,'nuisance']
+data.parameters['b^{(4)}_2']         = [ -3.2115,    None,  None,     0.5,     1,'nuisance']
+data.parameters['b^{(4)}_{G_2}']         = [ 7.5104e-01,    None,  None,    0.5,     1,'nuisance']
 
 # Derived parameters
 
@@ -101,6 +101,7 @@ data.cosmo_arguments['FFTLog mode'] = 'FAST'
 data.cosmo_arguments['IR resummation'] = ' Yes '
 data.cosmo_arguments['Bias tracers'] = ' Yes '
 data.cosmo_arguments['RSD'] = ' Yes '
+# array of sample redshifts
 data.cosmo_arguments['z_pk'] = '0.38, 0.61'
 data.cosmo_arguments['AP'] = ' Yes '
 # Whether to include PNG?
@@ -139,3 +140,61 @@ full_shape_spectra.use_P = True
 full_shape_spectra.use_Q = True
 full_shape_spectra.use_B = True
 full_shape_spectra.use_AP = True
+
+## Sample parameters
+
+# Redshift and number of redshift slices to use (up to len(z))
+full_shape_spectra.z = [0.61, 0.61, 0.38, 0.38]
+full_shape_spectra.nz = 4
+
+# Approximate 1/nbar of survey
+full_shape_spectra.inv_nbar = [5000., 5000., 3500., 3500.]
+
+# Measurements
+full_shape_spectra.data_directory = data.path['data']
+full_shape_spectra.P_measurements = ['data/boss_pk_ngc_z3.dat','data/boss_pk_sgc_z3.dat','data/boss_pk_ngc_z1.dat','data/boss_pk_sgc_z1.dat']
+full_shape_spectra.AP_measurements = ['data/boss_alpha_ngc_z3.dat','data/boss_alpha_sgc_z3.dat','data/boss_alpha_ngc_z1.dat','data/boss_alpha_sgc_z1.dat']
+full_shape_spectra.B_measurements = ['data/boss_bk_ngc_z3.dat','data/boss_bk_sgc_z3.dat','data/boss_bk_ngc_z1.dat','data/boss_bk_sgc_z1.dat']
+
+# Joint covariance matrix
+full_shape_spectra.covmat_file = ['data/boss_cov_ngc_z3.dat','data/boss_cov_sgc_z3.dat','data/boss_cov_ngc_z1.dat','data/boss_cov_sgc_z1.dat']
+
+# Fiducial coordinates
+full_shape_spectra.h_fid = 0.676
+full_shape_spectra.DA_fid = [1486.9604106889594,1486.9604106889594,1108.8090636654,1108.8090636654]
+full_shape_spectra.Hz_fid = [91.39727080913846,91.39727080913846,82.9281,82.9281]
+
+# AP fiducial parameters
+full_shape_spectra.rdHfid = [0.046932401774762225,0.046932401774762225,0.040872046001833195,0.040872046001833195]
+full_shape_spectra.rdDAfid = [0.1031183538734282,0.1031183538734282,0.13325653008234437,0.13325653008234437]
+
+## Other power spectrum parameters
+# include integration in k-bins
+full_shape_spectra.bin_integration_P = True
+# kmin for P_l(k) [for each z bin]
+full_shape_spectra.kminP = [0.01, 0.01, 0.01, 0.01]
+# kmax for P_l(k)
+full_shape_spectra.kmaxP = [0.20, 0.20, 0.20, 0.20]
+# kmax for Q0(k)
+full_shape_spectra.kmaxQ = [0.40, 0.40, 0.40, 0.40] 
+# whether to remove wiggles from linear power spectra
+full_shape_spectra.no_wiggle = False
+
+## Other bispectrum parameters
+full_shape_spectra.discreteness_weights_file = ['data/boss_bk_weights_ngc_z3.dat','data/boss_bk_weights_sgc_z3.dat','data/boss_bk_weights_ngc_z1.dat','data/boss_bk_weights_sgc_z1.dat']
+# kmin for B0
+full_shape_spectra.kminB = [0.015, 0.015, 0.015, 0.015]
+# kmax for B0
+full_shape_spectra.kmaxB = [0.075, 0.075, 0.075, 0.075]
+# width of B0 k bins
+full_shape_spectra.dkB = [0.01,0.01,0.01,0.01]
+# Number of radial integration bins
+full_shape_spectra.n_gauss = 1
+# Number of angular integration bins
+full_shape_spectra.n_gauss2 = 3
+# whether to include the one-loop bispectrum
+full_shape_spectra.oneloop_B = False
+# HDF5 file containing one-loop bispectrum shapes (NB: for PTChallenge dataset here!)
+full_shape_spectra.oneloop_shapes = "/projects/QUIJOTE/Oliver/ptc_rsd_HR.h5"
+# Fiducial sigma8 used to compute one-loop shapes
+full_shape_spectra.sigma8_fid = 0.804762
