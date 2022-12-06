@@ -197,4 +197,4 @@ full_shape_spectra.oneloop_B = False
 # HDF5 file containing one-loop bispectrum shapes (NB: for PTChallenge dataset here!)
 full_shape_spectra.oneloop_shapes = "/projects/QUIJOTE/Oliver/ptc_rsd_HR.h5"
 # Fiducial sigma8 used to compute one-loop shapes
-full_shape_spectra.sigma8_fid = 0.804762
+full_shape_spectra.sigma8_fid = 0.8
