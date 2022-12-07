@@ -28,6 +28,8 @@ class full_shape_spectra(Likelihood_prior):
                 # Check whether to use one-loop Bk
                 if self.use_B and not hasattr(self,'oneloop_B'):
                         self.oneloop_B = False
+                if hasattr(self,'oneloop_B'):
+                        raise Exception("Not yet fully implemented!")                        
                 # Check ell-max
                 if not hasattr(self, 'lmax'):
                         self.lmax = 4
