@@ -56,8 +56,8 @@ class Datasets(object):
                         P4_init=data[3]
                         
                         # Count number of P bins (nP) and Q bins (nQ)
+                        self.nP_init.append(len(k_init))
                         if options.use_Q:
-                            self.nP_init.append(len(k_init))
                             self.nPQ.append(np.sum((k_init<options.kmaxQ[zi])&(k_init>=options.kminP[zi])))
                             self.nQ.append(np.sum((k_init<options.kmaxQ[zi])&(k_init>=options.kmaxP[zi])))
                             self.nP.append(self.nPQ[zi] - self.nQ[zi])         
