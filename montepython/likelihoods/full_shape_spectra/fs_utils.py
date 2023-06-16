@@ -103,7 +103,7 @@ class Datasets(object):
                         self.nB.append(len(self.B0[zi]))
 
                         # 1D triangle centers
-                        self.kB.append(np.arange(options.kminB[zi],options.kmaxB[zi],options.dkB[zi]))
+                        self.kB.append(np.arange(options.kminB[zi],options.kmaxB[zi]+1e-12,options.dkB[zi]))
                         self.dkB.append(self.kB[zi][1]-self.kB[zi][0])
                 
                         # Indices labelling bispectrum bins
