@@ -44,7 +44,7 @@ class full_shape_spectra(Likelihood_prior):
                 # Define nuisance parameter mean and standard deviations
                 shape = np.ones(self.dataset.nz)
                 # prior based on b2(b1) relation
-                self.prior_b2 = lambda b1: (0.412 - 2.143*b1 + 0.929*b1**2 + 0.008*b1**2 + 8./21.*(b1 - 1), 1.*shape)
+                self.prior_b2 = lambda b1: (0.412 - 2.143*b1 + 0.929*b1**2 + 0.008*b1**3 + 8./21.*(b1 - 1), 1.*shape)
                 # self.prior_b2 = 0.*shape, 1.*shape # original prior
                 # prior based on bG2(b1) relation
                 self.prior_bG2 = lambda b1: (-2./7.*(b1-1), 1.*shape)
