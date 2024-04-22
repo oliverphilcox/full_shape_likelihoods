@@ -15,7 +15,7 @@ class full_shape_spectra(Likelihood_prior):
         # this case, it does not differ, actually, from the __init__ method in
         # Likelihood class.
 
-        def __init__(self,path,data,command_line,extra_inputs=[]):
+        def __init__(self,path,data,command_line):
                 """Initialize the full shape likelihood. This loads the data-set and pre-computes a number of useful quantities."""
 
                 # Initialize the  likelihood
@@ -25,14 +25,11 @@ class full_shape_spectra(Likelihood_prior):
                 self.dataset = Datasets(self)
 
                 # Define nuisance parameter mean and standard deviations
-                # mean of b2 and bG2 based on b2(b1), bG2(b1) relations from Kaz's paper
-                # same for variance, if they vary...
-                # NB: different convention for mean and variance of shot noise in P and B
+                # Note: we use a different convention for mean and variance of shot noise in P and B
                 shape = np.ones(self.dataset.nz)
 
-                self.prior_means = {#'b2': lambda b1: 0.412 - 2.143*b1 + 0.929*b1**2 + 0.008*b1**3 - 8./21.*(b1 - 1),
-                                    #'bG2': lambda b1: -2./7.*(b1-1),
-                                    'bGamma3': lambda b1: 23.*(b1-1.)/42.,
+                # We add b2 and bG2 below
+                self.prior_means = {'bGamma3': lambda b1: 23.*(b1-1.)/42.,
                                     'cs0': 0.*shape,
                                     'cs2': 30.*shape,
                                     'cs4': 0.*shape,
@@ -45,9 +42,7 @@ class full_shape_spectra(Likelihood_prior):
                                     'bphi': 1.*shape,
                                     'bphi_coll_1': 1.*shape,
                                     'bphi_coll_2': 1.*shape} # last three only relevant for non-Gaussianity!
-                self.prior_stds = {#'b2': 1.*shape,
-                                   #'bG2': 1.*shape,
-                                   'bGamma3': 1.*shape,
+                self.prior_stds = {'bGamma3': 1.*shape,
                                    'cs0': 30.*shape,
                                    'cs2': 30.*shape,
                                    'cs4': 30.*shape,
@@ -62,17 +57,19 @@ class full_shape_spectra(Likelihood_prior):
                                    'bphi_coll_2': 5.*shape} # last three only relevant for non-Gaussianity!
 
                 if not self.bias_relations_varying and not self.bias_relations_fixed:
-                    print('~> you are not using HOD-inspired relations for b2 and bG2...')
+                    print('Using flat priors on b2 and bG2 around dark matter predictions')
 
                 if self.bias_relations_varying:
                         # Replace quadratic biases mean and variance with bias relation predictions from HOD fitting of Kaz
-                        assert not self.bias_relations_fixed, '~> you are asking to fix biases and vary them at the same time!'
-                        print("~> careful! You are using a fit to variance of b2 and bG2 in terms of b1. Be sure that b1 is sampled in the range where these are positive...")
+                        assert not self.bias_relations_fixed, 'Cannot fix biases and vary them at the same time!'
+                        print('Using HOD-calibrated bias relations for b2 and bG2.')
+                        print('Caution: b1 must be in range [1, 4] for these to apply!')
                         self.prior_means |= {'b2': lambda b1:  -0.38 - 0.15*b1 - 0.021*b1**2. - 0.047*b1**3.,
                                              'bG2': lambda b1: 0.18 - 0.11*b1 - 0.015*b1**2.}
                         self.prior_stds  |= {'b2': lambda b1:  0.06*b1 + 0.24*b1**2. + 0.02*b1**3. - 0.003*b1**4.,
                                              'bG2': lambda b1: 0.11*b1 - 0.012*b1**2. - 0.001*b1**3.}
                 else:
+                        print('Using dark-matter bias relations with scatter')
                         self.prior_means |= {'b2': lambda b1: 0.412 - 2.143*b1 + 0.929*b1**2 + 0.008*b1**3 - 8./21.*(b1 - 1),
                                              'bG2': lambda b1: -2./7.*(b1-1)}
                         self.prior_stds  |= {'b2': 1.*shape,
@@ -140,7 +137,7 @@ class full_shape_spectra(Likelihood_prior):
                 As = cosmo.A_s()
                 norm = 1.
 
-                # PNG stuff
+                # PNG parameters
                 fNL_eq = (data.mcmc_parameters['f^{eq}_{NL}']['current'] * data.mcmc_parameters['f^{eq}_{NL}']['scale'])
                 fNL_orth = (data.mcmc_parameters['f^{orth}_{NL}']['current'] * data.mcmc_parameters['f^{orth}_{NL}']['scale'])
 
@@ -152,6 +149,7 @@ class full_shape_spectra(Likelihood_prior):
                                 raise Exception('PNG mode must be turned on to use fNL!')
                         assert data.cosmo_arguments['PNG']=='Yes', 'PNG mode must be turned on to use fNL!'
 
+                # Check cosmological collider parameters (normally not used)
                 beta_dotpi2 = (data.mcmc_parameters['beta_dotpi2']['current'] * data.mcmc_parameters['beta_dotpi2']['scale'])
                 beta_nablapi2 = (data.mcmc_parameters['beta_nablapi2']['current'] * data.mcmc_parameters['beta_nablapi2']['scale'])
 
@@ -166,16 +164,18 @@ class full_shape_spectra(Likelihood_prior):
                 mu = (data.mcmc_parameters['mu']['current'] * data.mcmc_parameters['mu']['scale'])
                 cs = np.power(10.,(data.mcmc_parameters['log10cs']['current'] * data.mcmc_parameters['log10cs']['scale']))
 
+                # Define BAO rescaling (normally not used)
                 alpha_rs = (data.mcmc_parameters['alpha_{r_s}']['current'] * data.mcmc_parameters['alpha_{r_s}']['scale'])
 
                 z = self.z[:self.nz]
                 fz = np.asarray([cosmo.scale_independent_growth_factor_f(zz) for zz in z])
+                
                 # Define local variables
                 dataset = self.dataset
 
                 for i_s in range(1,1+self.nz):
                     if (data.mcmc_parameters['b^{('+str(i_s)+')}_2']['status']=='varying' or data.mcmc_parameters['b^{('+str(i_s)+')}_{G_2}']['status']=='varying') and self.bias_relations_fixed:
-                        raise Exception("~> don't need to vary quadratic and tidal parameters if fixing bias relations!")
+                        raise Exception("We don't need to vary quadratic and tidal parameters if we are fixing quadratic biases from bias relations!")
 
                 # Load non-linear nuisance parameters
                 b1 = np.asarray([(data.mcmc_parameters['b^{('+str(i_s)+')}_1']['current']*data.mcmc_parameters['b^{('+str(i_s)+')}_1']['scale']) for i_s in range(1,1+self.nz)])
@@ -183,8 +183,8 @@ class full_shape_spectra(Likelihood_prior):
                 bG2 = np.asarray([(data.mcmc_parameters['b^{('+str(i_s)+')}_{G_2}']['current']*data.mcmc_parameters['b^{('+str(i_s)+')}_{G_2}']['scale']) for i_s in range(1,1+self.nz)])
 
                 if self.bias_relations_fixed:
-                        # Replace quadratic biases with *mean* bias relation predictions from HOD fitting of Kaz
-                        assert not self.bias_relations_varying, '~> you are asking to fix biases and vary them at the same time!'
+                        # Replace quadratic biases with *mean* bias relation predictions from HOD fitting of Akitsu+24
+                        assert not self.bias_relations_varyinh, 'Cannot fix biases and vary them at the same time!'
                         b2  = -0.38 - 0.15*b1 - 0.021*b1**2. - 0.047*b1**3.
                         bG2 = 0.18 - 0.11*b1 - 0.015*b1**2.
 
@@ -225,8 +225,6 @@ class full_shape_spectra(Likelihood_prior):
                         biases |= {key: self.prior_means[key][zi] for key in linear_params[1:]}
                         stds    = {key: self.prior_stds[key][zi] for key in linear_params}
                         if self.bias_relations_varying:
-                                # Replace quadratic biases mean and variance with bias relation predictions from HOD fitting of Kaz
-                                assert not self.bias_relations_fixed, '~> you are asking to fix biases and vary them at the same time!'
                                 stds   |= {'b2': self.prior_stds['b2'](b1)[zi], 'bG2': self.prior_stds['bG2'](b1)[zi]}
                         else:
                                 stds   |= {'b2': self.prior_stds['b2'][zi], 'bG2': self.prior_stds['bG2'][zi]}

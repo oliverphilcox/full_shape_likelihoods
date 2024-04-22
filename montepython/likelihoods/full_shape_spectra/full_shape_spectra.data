@@ -8,17 +8,17 @@ full_shape_spectra.use_nuisance =['b^{(1)}_1','b^{(1)}_2','b^{(1)}_{G_2}','b^{(2
 full_shape_spectra.z = [0.61, 0.61, 0.38, 0.38]
 full_shape_spectra.nz = 4
 
-# Approximate 1/nbar of survey
+# Approximate 1/nbar of survey in each bin
 full_shape_spectra.inv_nbar = [5000., 5000., 3500., 3500.]
 
 # Measurements
 full_shape_spectra.data_directory = data.path['data']
 full_shape_spectra.P_measurements = ['data/boss_pk_ngc_z3.dat','data/boss_pk_sgc_z3.dat','data/boss_pk_ngc_z1.dat','data/boss_pk_sgc_z1.dat']
 full_shape_spectra.AP_measurements = ['data/boss_alpha_ngc_z3.dat','data/boss_alpha_sgc_z3.dat','data/boss_alpha_ngc_z1.dat','data/boss_alpha_sgc_z1.dat']
-full_shape_spectra.B_measurements = ['data/bk_multi_ngcz3_data_ordered.dat','data/bk_multi_sgcz3_data_ordered.dat','data/bk_multi_ngcz1_data_ordered.dat','data/bk_multi_sgcz1_data_ordered.dat']
+full_shape_spectra.B_measurements = ['data/boss_bk_ngc_z3.dat','data/boss_bk_sgc_z3.dat','data/boss_bk_ngc_z1.dat','data/boss_bk_sgc_z1.dat']
 
 # Joint covariance matrix
-full_shape_spectra.covmat_file = ['data/cov_closed_pqbb_ngcz3_multi.dat','data/cov_closed_pqbb_sgcz3_multi.dat','data/cov_closed_pqbb_ngcz1_multi.dat','data/cov_closed_pqbb_sgcz1_multi.dat']
+full_shape_spectra.covmat_file = ['data/boss_cov_ngc_z3.dat','data/boss_cov_sgc_z3.dat','data/boss_cov_ngc_z1.dat','data/boss_cov_sgc_z1.dat']
 
 # Fiducial coordinates
 full_shape_spectra.h_fid = 0.676
@@ -44,7 +44,7 @@ full_shape_spectra.kmaxQ = [0.40, 0.40, 0.40, 0.40]
 full_shape_spectra.no_wiggle = False
 
 ## Other bispectrum parameters
-full_shape_spectra.discreteness_weights_file = ['data/discreteness_ngcz3.dat','data/discreteness_sgcz3.dat','data/discreteness_ngcz1.dat','data/discreteness_sgcz1.dat']
+full_shape_spectra.discreteness_weights_file = ['data/boss_bk_weights_ngc_z3.dat','data/boss_bk_weights_sgc_z3.dat','data/boss_bk_weights_ngc_z1.dat','data/boss_bk_weights_sgc_z1.dat']
 # lmax for B_l(k)
 full_shape_spectra.lmaxB = 4
 # kmin for B_l
@@ -68,6 +68,6 @@ full_shape_spectra.collider_pk_redshifts = [0.61, 0.38]
 full_shape_spectra.collider_pk_dotpi2   = ["/home/gcabass/collider_h5_files/multipoles_interpolation_data-dotpi2-z_061.h5","/home/gcabass/collider_h5_files/multipoles_interpolation_data-dotpi2-z_038.h5"]
 full_shape_spectra.collider_pk_nablapi2   = ["/home/gcabass/collider_h5_files/multipoles_interpolation_data-nablapi2-z_061.h5","/home/gcabass/collider_h5_files/multipoles_interpolation_data-nablapi2-z_038.h5"]
 
-##Kaz's bias relations default settings
-full_shape_spectra.bias_relations_varying = False
-full_shape_spectra.bias_relations_fixed = False
+# Default settings for bias parameters: uniform priors around dark matter relations
+full_shape_spectra.bias_relations_varying = False # use HOD relations
+full_shape_spectra.bias_relations_fixed = False # fix biases
