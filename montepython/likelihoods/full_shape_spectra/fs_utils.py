@@ -6,28 +6,33 @@ from scipy import interpolate
 import scipy.integrate as integrate
 import h5py
 from scipy.sparse import csc_matrix
-from scipy.sparse.linalg import inv as sparse_inv   
-from scipy.sparse.linalg import splu                               
+from scipy.sparse.linalg import inv as sparse_inv
+from scipy.sparse.linalg import splu
+from scipy.special import legendre
 
 class Datasets(object):
         def __init__(self, options):
                 """Load Pk, Q0 and B0 data from file, as well as covariance matrix. The `options' argument is a dictionary of options specifying file names etc."""
-                
+
                 # Count number of redshift bins
                 self.nz = options.nz
-                
+
+                # Check lmax
+                assert options.lmaxP in [0,2,4]
+                assert options.lmaxB in [0,2,4]
+                self.nlP = options.lmaxP//2+1
+                self.nlB = options.lmaxB//2+1
+
                 # Load datasets
                 if options.use_Q and not options.use_P:
                         raise Exception("Cannot use Q0 without power spectra!")
-                if options.use_P:
-                        self.load_power_spectrum(options)
-                else:
+                if options.use_P or options.use_B:
+                        self.load_power_spectrum(options) # load to get dimensions!
+                if not options.use_P:
                         self.nP = np.zeros(options.nz)
                         self.nQ = np.zeros(options.nz)
                 if options.use_B:
                         self.load_bispectrum(options)
-                        if options.oneloop_B:
-                                self.initialize_oneloop_B(options)
                 else:
                         self.nB = np.zeros(options.nz)
                 if options.use_AP:
@@ -40,134 +45,75 @@ class Datasets(object):
 
         def load_power_spectrum(self, options):
                 """Load power spectrum multipole dataset, optionally including Q0"""
-                
-                print("Loading power spectra...")
-                
-                # Load raw Pk measurements
-                self.P0, self.P2, self.P4, self.Q0 = [],[],[],[]
+
+                Pl_init = []
                 self.kPQ, self.dkPQ = [],[]
                 self.nP_init, self.nPQ, self.nP, self.nQ,self.omitP,self.omitQ = [],[],[],[],[],[]
-                
+
                 for zi in range(self.nz):
                         data=np.loadtxt(os.path.join(options.data_directory, options.P_measurements[zi]), skiprows = 0, unpack=True)
                         k_init = data[0]
-                        P0_init=data[1]
-                        P2_init=data[2]
-                        P4_init=data[3]
-                        
+                        Pl_init.append(data[1:4].T)
                         # Count number of P bins (nP) and Q bins (nQ)
                         self.nP_init.append(len(k_init))
                         if options.use_Q:
                             self.nPQ.append(np.sum((k_init<options.kmaxQ[zi])&(k_init>=options.kminP[zi])))
                             self.nQ.append(np.sum((k_init<options.kmaxQ[zi])&(k_init>=options.kmaxP[zi])))
-                            self.nP.append(self.nPQ[zi] - self.nQ[zi])         
+                            self.nP.append(self.nPQ[zi] - self.nQ[zi])
                             self.omitP.append(np.sum((k_init<options.kminP[zi]))) # bins to omit at start of Pk array
                             self.omitQ.append(self.nP[zi] + self.omitP[zi]) # bins to omit at start of Q0 array
                         else:
                             self.nP.append(np.sum((k_init<options.kmaxP[zi])&(k_init>=options.kminP[zi])))
                             self.nPQ.append(self.nP[zi])
                             self.nQ.append(0)
-                            self.omitP.append(np.sum((k_init<options.kminP[zi]))) # bins to omit at start of Pk array              
+                            self.omitP.append(np.sum((k_init<options.kminP[zi]))) # bins to omit at start of Pk array
                         # Filter k and P_ell to correct bins
                         self.kPQ.append(k_init[self.omitP[zi]:self.omitP[zi]+self.nPQ[zi]])
                         self.dkPQ.append(self.kPQ[zi][1]-self.kPQ[zi][0]) # bin width
-                        P0 = P0_init[self.omitP[zi]:self.omitP[zi]+self.nPQ[zi]]
-                        P2 = P2_init[self.omitP[zi]:self.omitP[zi]+self.nPQ[zi]]
-                        P4 = P4_init[self.omitP[zi]:self.omitP[zi]+self.nPQ[zi]]
-                        
-                        # Define data vectors
-                        self.P0.append(P0[:self.nP[zi]])
-                        self.P2.append(P2[:self.nP[zi]])
-                        self.P4.append(P4[:self.nP[zi]])
 
-                        # Compute Q0 from Pk0 measurements
-                        if options.use_Q:
-                                self.Q0.append(P0[self.nP[zi]:]-1./2.*P2[self.nP[zi]:]+3./8.*P4[self.nP[zi]:])
+                Pl_init = np.asarray(Pl_init)
+
+                # Filter k and P_ell to correct bins
+                Pl = np.asarray([Pl_init[zi,self.omitP[zi]:self.omitP[zi]+self.nPQ[zi],:] for zi in range(self.nz)])
+
+                # Define data vectors
+                self.Pl = np.asarray([Pl[zi,:self.nP[zi],:self.nlP] for zi in range(self.nz)])
+
+                # Compute Q0 from Pk0 measurements
+                if options.use_Q:
+                        self.Q0 = np.asarray([Pl[zi,self.nP[zi]:,0]-1./2.*Pl[zi,self.nP[zi]:,1]+3./8.*Pl[zi,self.nP[zi]:,2] for zi in range(self.nz)])
 
         def load_bispectrum(self, options):
                 """Load bispectrum dataset."""
-                
-                print("Loading bispectra...")
-                
+
                 # Load discreteness weights and bispectra from file
-                self.discreteness_weights, self.B0, self.nB = [],[],[]
+                self.discreteness_weights, Bl, self.nB = [],[],[]
                 self.kB, self.dkB, self.triangle_indices = [],[],[]
-                
+
                 for zi in range(self.nz):
                         self.discreteness_weights.append(np.asarray(np.loadtxt(os.path.join(options.data_directory, options.discreteness_weights_file[zi]), dtype=np.float64)))
                         data = np.loadtxt(os.path.join(options.data_directory, options.B_measurements[zi]), dtype=np.float64, unpack=True)
                         khere, khere2, khere3 = data[:3]
-                        self.B0.append(data[3])
-                
-                        assert len(self.B0[zi])==len(self.discreteness_weights[zi]), "Number of bispectra bins must match number of weights!"
-                        self.nB.append(len(self.B0[zi]))
+
+                        assert np.shape(data[3:].T)==np.shape(self.discreteness_weights[zi]), "Number of bispectrum multipole bins must match number of weights!"
+                        self.nB.append(np.shape(self.discreteness_weights[zi])[0])
+
+                        # Define bispectrum multipoles
+                        Bl.append(data[3:].T)
 
                         # 1D triangle centers
-                        self.kB.append(np.arange(options.kminB[zi],options.kmaxB[zi]+1e-12,options.dkB[zi]))
+                        self.kB.append(np.arange(options.kminB[zi],options.kmaxB[zi]+1.e-12,options.dkB[zi]))
                         self.dkB.append(self.kB[zi][1]-self.kB[zi][0])
-                
+
                         # Indices labelling bispectrum bins
                         self.triangle_indices.append([np.asarray(kk/self.dkB[zi],dtype=int)-int(options.kminB[zi]/self.dkB[zi]) for kk in [khere, khere2, khere3]])
 
-        def initialize_oneloop_B(self, options):
-                """Initialize the one-loop bispectrum computation. The primary function of this is to load the interpolation grid from file."""
+                # Define data vectors
+                self.Bl = np.asarray(Bl)[:,:,:self.nlB]
 
-                print("Interpolating one-loop bispectra...")
-                
-                ## Load interpolation grid
-                try:
-                        infile = h5py.File(options.oneloop_shapes,'r')  
-                except:
-                        raise IOError('Could not open file %s'%options.oneloop_shapes)
-                b222 = infile['222']
-                b321I = infile['321I']
-                b321II = infile['321II']
-                b411 = infile['411']
-                kk = infile['k']
-                xx = infile['x']
-                yy = infile['y']
-                
-                ## Define mesh of grid points
-                kt = np.meshgrid(kk,xx)[0].T.ravel()
-                xt = np.meshgrid(kk,xx)[1].T.ravel()
-                yt = np.meshgrid(kk,yy)[1].T.ravel()
-                kxy = np.vstack([kt,xt,yt]).T
-
-                def Interpolate3D(bkTable):
-                        """Reconstruct full 3D interpolation table for all biases and angles simultaneously. 
-                        If this is used for vector k1,k2,k3, they should be *ordered* such that k1 > k2 > k3. This will *not* be checked at runtime.
-                        This function will return NaNs if the inputs do not obey the triangle conditions.
-                        """
-
-                        bkVals = np.asarray([[bkTable[i,:,:,j].T.ravel() for i in range(len(bkTable))] for j in range(len(bkTable[0,0,0]))]).T
-                        BkInt1 = interpolate.LinearNDInterpolator(kxy,bkVals)
-                        
-                        def BkInt(k1,k2,k3):
-                                if type(k1)==np.ndarray:
-                                        # Note no bounds-checking here!
-                                        k = k1
-                                        x = (k3/k1)**2;
-                                        y = (k2/k1)**2;
-                                        return BkInt1(k, x, y)
-                                else:
-                                        k123 = np.sort([k1,k2,k3])
-                                        k = k123[2]
-                                        x = (k123[0]/k)**2;
-                                        y = (k123[1]/k)**2;
-                                        return BkInt1(k, x, y)
-                        return BkInt
-
-                ## Define interpolators
-                # These return a grid of all biases + mu coefficients simultaneously
-                print("Loading bispectrum interpolators...\n")
-                self.b222int = Interpolate3D(b222)
-                self.b321Iint = Interpolate3D(b321I)
-                self.b321IIint = Interpolate3D(b321II)
-                self.b411int = Interpolate3D(b411)
-        
         def load_AP(self, options):
                 """Load Alcock-Paczynski dataset."""
-                
+
                 alphas = []
                 for zi in range(self.nz):
                         alphas.append(np.loadtxt(os.path.join(options.data_directory, options.AP_measurements[zi]), dtype=np.float64))
@@ -175,28 +121,32 @@ class Datasets(object):
                 self.nAP = 2
 
         def load_covariance(self, options):
-                """Load in the covariance matrix, filtered to the required bins and datasets [with the ordering P0, P2, P4, Q0, B0, AP]."""
-                
+                """Load in the covariance matrix, filtered to the required bins and datasets [with the ordering P0, P2, P4, Q0, B0, B2, B4, AP]."""
+
                 # Load full covariance matrix
                 self.cov = []
                 self.icov = []
-                self.logdetcov = []
+                #self.logdetcov = []
                 print("Loading covariances...")
                 for zi in range(self.nz):
                         cov1 = np.loadtxt(os.path.join(options.data_directory, options.covmat_file[zi]),dtype=np.float64)
-                        
+
                         # Define which bins we use
                         filt = []
                         if options.use_P:
                                 filt.append(np.arange(self.omitP[zi],self.omitP[zi]+self.nP[zi])) # P0
-                                if options.lmax>0:
+                                if options.lmaxP>0:
                                         filt.append(np.arange(self.omitP[zi]+self.nP_init[zi],self.omitP[zi]+self.nP_init[zi]+self.nP[zi])) # P2
-                                if options.lmax>2:
+                                if options.lmaxP>2:
                                         filt.append(np.arange(self.omitP[zi]+2*self.nP_init[zi],self.omitP[zi]+2*self.nP_init[zi]+self.nP[zi])) # P4
                         if options.use_Q:
                                 filt.append(np.arange(self.omitQ[zi]+3*self.nP_init[zi],self.omitQ[zi]+3*self.nP_init[zi]+self.nQ[zi])) # Q0
                         if options.use_B:
                                 filt.append(np.arange(4*self.nP_init[zi],4*self.nP_init[zi]+self.nB[zi])) # B0
+                                if options.lmaxB>0:
+                                        filt.append(np.arange(4*self.nP_init[zi]+self.nB[zi],4*self.nP_init[zi]+2*self.nB[zi])) # B2
+                                if options.lmaxB>2:
+                                        filt.append(np.arange(4*self.nP_init[zi]+2*self.nB[zi],4*self.nP_init[zi]+3*self.nB[zi])) # B4
                         if options.use_AP:
                                 filt.append([-2,-1])
                         filt= np.concatenate(filt)
@@ -214,37 +164,142 @@ class Datasets(object):
                         self.icov.append(icov)
 
                         # Compute matrix determinant (again sparsely)
-                        lu = splu(sparse_cov)
-                        detcov = (np.log(lu.L.diagonal().astype(np.complex128)).sum() + np.log(lu.U.diagonal().astype(np.complex128)).sum()).real
-                        
-                        self.logdetcov.append(detcov)
+                        #lu = splu(sparse_cov)
+                        #detcov = (np.log(lu.L.diagonal().astype(np.complex128)).sum() + np.log(lu.U.diagonal().astype(np.complex128)).sum()).real
+
+                        #self.logdetcov.append(detcov)
+
+        def _load_collider_power_spectra(self, options):
+            """Load interpolation functions for the cosmological collider power spectra"""
+
+            # List of quantities to interpolate
+            columns = ['v_v_0','v_d_0','d_d_0','b2over2_0','bG2_0','b1_b2over2_0','b1_bG2_0',
+                       'v_v_2','v_d_2','d_d_2','b2over2_2','bG2_2','b1_b2over2_2','b1_bG2_2',
+                       'v_v_4','v_d_4','d_d_4','b2over2_4','bG2_4','b1_b2over2_4','b1_bG2_4']
+
+            def load_interpolators(infile_name):
+
+                # Load file and coordinate grids
+                infile  = h5py.File(infile_name,'r')
+                k_list  = np.asarray(infile['x'])
+                mu_list = np.asarray(infile['y'])
+                cs_list = np.asarray(infile['z'])
+
+                # Create a stack of all the interpolators and return
+                stack_dat = np.stack([np.asarray(infile[column]) for column in columns],axis=-1)
+                return interpolate.RegularGridInterpolator((k_list, mu_list, cs_list), stack_dat, method="linear", bounds_error=False, fill_value = 0.)
+
+            # Load interpolators for each redshift
+            self.pk_dotpi2_interp = {}
+            self.pk_nablapi2_interp = {}
+            for zi,z in enumerate(options.collider_pk_redshifts):
+                self.pk_dotpi2_interp[z] = load_interpolators(options.collider_pk_dotpi2[zi])
+                self.pk_nablapi2_interp[z] = load_interpolators(options.collider_pk_nablapi2[zi])
+
+        def _load_collider_shapes(self, options):
+            """Load interpolation functions for the cosmological collider bispectra"""
+
+            # Load file and coordinate grids
+            infile  = h5py.File(options.collider_shapes,'r')
+            u_list  = np.asarray(infile['x'])
+            mu_list = np.asarray(infile['y'])
+            cs_list = np.asarray(infile['z'])
+
+            # Create a stack of all the interpolators and create function which outputs only the two combinations we need
+            stack_dat = np.stack([np.asarray(infile['I'])+1./u_list[:,None,None]*np.asarray(infile['u2dI']),
+                                  np.asarray(infile['u4ddI'])+2.0*np.asarray(infile['u3dI'])],
+                                 axis=-1)
+            interp = interpolate.RegularGridInterpolator((u_list, mu_list, cs_list), stack_dat, method="linear", bounds_error=True)
+
+            # Define function for bispectrum shapes and normalization
+            def collider_shapes(k2_k1,k3_k1,mu,cs):
+
+                sq_1 = (1.0-k3_k1**2-k2_k1**2)
+                sq_2 = (k3_k1**2-k2_k1**2-1.0)
+                sq_3 = (k2_k1**2-1.0-k3_k1**2)
+                cs2 = cs**2
+
+                # Run interpolators
+                shape = np.zeros_like(k3_k1)
+                interp_1 = interp(np.stack([1.0/(cs*(k3_k1+k2_k1)),mu+shape,cs+shape],axis=-1))
+                interp_2 = interp(np.stack([k3_k1/(cs*(k2_k1+1.0)),mu+shape,cs+shape],axis=-1))
+                interp_3 = interp(np.stack([k2_k1/(cs*(1.0+k3_k1)),mu+shape,cs+shape],axis=-1))
+
+                # dotpi2 shape
+                dot =  k3_k1*k2_k1*interp_1[...,1]
+                dot += k2_k1/(k3_k1**2)*interp_2[...,1]
+                dot += k3_k1/(k2_k1**2)*interp_3[...,1]
+
+                # nablapi2 shape
+                nabla =  sq_1*cs2*interp_1[...,1]
+                nabla += sq_2*cs2/(k3_k1**2)*interp_2[...,1]
+                nabla += sq_3*cs2/(k2_k1**2)*interp_3[...,1]
+                nabla += sq_1/(k3_k1*k2_k1)*interp_1[...,0]
+                nabla += sq_2/k2_k1*interp_2[...,0]
+                nabla += sq_3/k3_k1*interp_3[...,0]
+
+                return dot, nabla
+
+            # Define function for normalization
+            def collider_norm(mu,cs):
+
+                # Run interpolators
+                interp_1 = interp([1.0/(2.*cs),mu,cs])[0]
+
+                # Return normalized shapes
+                return 3*interp_1[1]*(-10./9.)*cs, (-3*cs**2*interp_1[1]-3*interp_1[0])*(5./9.)/cs
+
+            self.collider_shapes = collider_shapes
+            self.collider_norm = collider_norm
 
 class PkTheory(object):
-        def __init__(self, options, zi, all_theory, h, As, fNL_eq, fNL_orth, norm, fz, k_grid, kPQ, nP, nQ, Tk):
-                """Compute the theoretical power spectrum P(k) and parameter derivatives for a given cosmology and set of nuisance parameters."""
-                
+        def __init__(self, options, all_theory, h, As, zi, z, ng_params, norm, fz, k_grid, Tk):
+                """Compute the theoretical power spectrum P(k) and parameter derivatives for a given cosmology and set of non-Gaussianity and nuisance parameters."""
+
                 # Read in input parameters
                 self.all_theory = all_theory
                 self.h = h
                 self.As = As
                 self.norm = norm
-                self.fNL_eq = fNL_eq
-                self.fNL_orth = fNL_orth
                 self.k_grid = k_grid
-                self.kPQ = kPQ
+                self.fz = fz
+                self.kPQ = options.dataset.kPQ[zi]
                 self.dkPQ = options.dataset.dkPQ[zi]
                 self.kminP = options.kminP[zi]
                 self.kmaxP = options.kmaxP[zi]
-                self.fz = fz
-                self.nP = nP
-                self.nQ = nQ
+                self.nP = options.dataset.nP[zi]
+                self.nQ = options.dataset.nQ[zi]
+                self.nlP = options.dataset.nlP
                 self.Tk = Tk
                 self.options = options
+                self.use_eq_orth = options.use_eq_orth
+                self.use_collider = options.use_collider
                 self.dataset = options.dataset
-        
+
+                # Non-Gaussianity parameters
+                if self.use_eq_orth:
+                    self.fNL_eq = ng_params['fNL_eq']
+                    self.fNL_orth = ng_params['fNL_orth']
+                if self.use_collider:
+                    self.beta_dotpi2 = ng_params['beta_dotpi2']
+                    self.beta_nablapi2 = ng_params['beta_nablapi2']
+                    self.mu = ng_params['mu']
+                    self.cs = ng_params['cs']
+
+                # Collider interpolating functions
+                if self.use_collider:
+                    assert z in options.collider_pk_redshifts, "Requested redshift %.2f has not been computed for the collider!"%z
+
+                    # Define collider normalization
+                    self.norm_count_dotpi2, self.norm_count_nablapi2 = self.dataset.collider_norm(self.mu,self.cs)
+
+                    # Assemble collider grids
+                    self.Pl_dotpi2 = self.norm_count_dotpi2*np.reshape(self._Pl_dotpi2(z,k_grid*h,self.mu,self.cs),(len(k_grid),3,7))
+                    self.Pl_nablapi2 = self.norm_count_nablapi2*np.reshape(self._Pl_nablapi2(z,k_grid*h,self.mu,self.cs),(len(k_grid),3,7))
+
         def bin_integrator(self, input_table1):
                 """If bin-integration is included, integrate the function defined in `inttab' over the binned k-space. Else, return the input table1."""
-                
+
                 if self.options.bin_integration_P:
                         f_int = interpolate.InterpolatedUnivariateSpline(self.k_grid,input_table1,ext=3)
                         integrand = lambda k: np.exp(3.*k)*f_int(np.exp(k))
@@ -256,63 +311,126 @@ class PkTheory(object):
                         return out
                 else:
                         return input_table1
-        
-        def compute_Pl_oneloop(self, b1, b2, bG2, bGamma3, cs0, cs2, cs4, b4, a0, a2, inv_nbar, Pshot, bphi):
-                """Compute the 1-loop power spectrum multipoles, given the bias parameters."""
-                
-                # Run the main code
-                if not hasattr(self, 'P0'):
-                        self._load_P_oneloop_all(b1, b2, bG2, bGamma3, cs0, cs2, cs4, b4, a0, a2, inv_nbar, Pshot, bphi)
-                
-                # Extract the power spectrum multipoles
-                P0 = self.P0[:self.nP]
-                P2 = self.P2[:self.nP]
-                P4 = self.P4[:self.nP]
-                
-                return P0, P2, P4
 
-        def compute_Q0_oneloop(self, b1, b2, bG2, bGamma3, cs0, cs2, cs4, b4, a0, a2, inv_nbar, Pshot, bphi):
-                """Compute the 1-loop Q0 theory, given the bias parameters."""
-                
+        def compute_Pl_oneloop(self, biases):
+                """Compute the 1-loop power spectrum multipoles, given the bias parameters."""
+
                 # Run the main code
                 if not hasattr(self, 'P0'):
-                        self._load_P_oneloop_all(b1, b2, bG2, bGamma3, cs0, cs2, cs4, b4, a0, a2, inv_nbar, Pshot, bphi)
-                
+                        self._load_P_oneloop_all(biases)
+
+                # Extract the power spectrum multipoles
+                Pl = self.Pl[:self.nP,:self.nlP]
+
+                return Pl
+
+        def compute_Q0_oneloop(self, biases):
+                """Compute the 1-loop Q0 theory, given the bias parameters."""
+
+                # Run the main code
+                if not hasattr(self, 'P0'):
+                        self._load_P_oneloop_all(biases)
+
                 # Extract Q0
-                Q0 = self.P0[self.nP:]-1./2.*self.P2[self.nP:]+3./8.*self.P4[self.nP:]
-                
+                Q0 = self.Pl[self.nP:,0]-1./2.*self.Pl[self.nP:,1]+3./8.*self.Pl[self.nP:,2]
+
                 return Q0
 
-        def _load_P_oneloop_all(self, b1, b2, bG2, bGamma3, cs0, cs2, cs4, b4, a0, a2, inv_nbar, Pshot, bphi):
-                """Internal function to compute the 1-loop power spectrum multipoles for all k, given the bias parameters."""
-                
+        def _Pl_dotpi2(self,z,k_in_1_over_Mpc,mu,cs):
+            """Compute P_ell(k) for the collider dot(pi)^2 shape for all k at some (precomputed) redshift, z"""
+            return self.dataset.pk_dotpi2_interp[z](np.asarray([k_in_1_over_Mpc, mu*np.ones(len(k_in_1_over_Mpc)), cs*np.ones(len(k_in_1_over_Mpc))]).T)
+
+        def _Pl_nablapi2(self,z,k_in_1_over_Mpc,mu,cs):
+            """Compute P_ell(k) for the collider nabla(pi)^2 shape for all k at some (precomputed) redshift, z"""
+            return self.dataset.pk_nablapi2_interp[z](np.asarray([k_in_1_over_Mpc, mu*np.ones(len(k_in_1_over_Mpc)), cs*np.ones(len(k_in_1_over_Mpc))]).T)
+
+        def _load_P_oneloop_all(self, biases):
+                """Internal function to compute the 1-loop power spectrum multipoles for all k, given the bias parameters. Note that we always use lmax = 4 here, since higher-multipoles are needed for Q0."""
+
                 # Load variables
                 all_theory = self.all_theory
                 norm = self.norm
                 h = self.h
                 fz = self.fz
-                fNL_eq = self.fNL_eq
-                fNL_orth = self.fNL_orth
                 k_grid = self.k_grid
 
+                # Load biases for simplicity
+                b1 = biases['b1']
+                b2 = biases['b2']
+                bG2 = biases['bG2']
+                bGamma3 = biases['bGamma3']
+                cs0 = biases['cs0']
+                cs2 = biases['cs2']
+                cs4 = biases['cs4']
+                b4 = biases['b4']
+                a0 = biases['a0']
+                a2 = biases['a2']
+                Pshot = biases['Pshot']
+                inv_nbar = biases['inv_nbar']
+
+                # Load non-Gaussianity bias if needed
+                if self.use_eq_orth:
+                    bphi = biases['bphi']
+                if self.use_collider:
+                    bphi_coll_1 = biases['bphi_coll_1']
+                    bphi_coll_2 = biases['bphi_coll_2']
+                    # mu is needed as well for counterterm
+                    mu = self.mu
+
                 # Compute fNL factors
-                if not hasattr(self, 'phif') and not (fNL_eq==0 and fNL_orth==0):
-                        self.phif = (fNL_eq+fNL_orth)*(18./5.)*(b1-1.)*1.686*bphi*((k_grid/0.45)**2./self.Tk)
-                        self.phif1 = (fNL_eq+fNL_orth)*(18./5.)*(b1-1.)*1.686*((k_grid/0.45)**2./self.Tk)
-                
-                # Compute the power spectrum multipoles, including bin integration if requested
-                if fNL_eq==0 and fNL_orth==0:
-                        self.P0 = self.bin_integrator((norm**2.*all_theory[15]+norm**4.*(all_theory[21])+norm**1.*b1*all_theory[16]+norm**3.*b1*(all_theory[22]) + norm**0.*b1**2.*all_theory[17] +norm**2.*b1**2.*all_theory[23] + 0.25*norm**2.*b2**2.*all_theory[1] +b1*b2*norm**2.*all_theory[30]+ b2*norm**3.*all_theory[31] + b1*bG2*norm**2.*all_theory[32]+ bG2*norm**3.*all_theory[33] + b2*bG2*norm**2.*all_theory[4]+ bG2**2.*norm**2.*all_theory[5] + 2.*cs0*norm**2.*all_theory[11]/h**2. + (2.*bG2+0.8*bGamma3*norm)*norm**2.*(b1*all_theory[7]+norm*all_theory[8]))*h**3. + (inv_nbar)*Pshot + a0*inv_nbar*(k_grid/0.5)**2.  + fz**2.*b4*k_grid**2.*(norm**2.*fz**2./9. + 2.*fz*b1*norm/7. + b1**2./5)*(35./8.)*all_theory[13]*h + a2*(1./3.)*(10.**4.)*(k_grid/0.45)**2.)
-                        
-                        self.P2 = self.bin_integrator((norm**2.*all_theory[18]+norm**4.*(all_theory[24])+norm**1.*b1*all_theory[19]+norm**3.*b1*(all_theory[25]) + b1**2.*norm**2.*all_theory[26] +b1*b2*norm**2.*all_theory[34]+ b2*norm**3.*all_theory[35] + b1*bG2*norm**2.*all_theory[36]+ bG2*norm**3.*all_theory[37] + 0.25*b2**2.*all_theory[42] + b2*bG2*all_theory[43] + (bG2**2.)*all_theory[44] + 2.*cs2*norm**2.*all_theory[12]/h**2. + (2.*bG2+0.8*bGamma3*norm)*norm**3.*all_theory[9])*h**3. + fz**2.*b4*k_grid**2.*((norm**2.*fz**2.*70. + 165.*fz*b1*norm+99.*b1**2.)*4./693.)*(35./8.)*all_theory[13]*h + a2*(10.**4.)*(2./3.)*(k_grid/0.45)**2.)
-                        self.P4 = self.bin_integrator((norm**2.*all_theory[20]+norm**4.*all_theory[27]+b1*norm**3.*all_theory[28]+b1**2.*norm**2.*all_theory[29] + b2*norm**3.*all_theory[38] + bG2*norm**3.*all_theory[39] + b1*b2*all_theory[40] + b1*bG2*all_theory[41] + 0.25*b2**2.*all_theory[45] + b2*bG2*all_theory[46] + (bG2**2.)*all_theory[47] +2.*cs4*norm**2.*all_theory[13]/h**2.)*h**3. + fz**2.*b4*k_grid**2.*(norm**2.*fz**2.*210./143. + 30.*fz*b1*norm/11.+b1**2.)*all_theory[13]*h)
-                        
-                else:
-                        self.P0 = self.bin_integrator((norm**2.*all_theory[15]+norm**4.*(all_theory[21])+norm**1.*b1*all_theory[16]+norm**3.*b1*(all_theory[22]) + norm**0.*b1**2.*all_theory[17] +norm**2.*b1**2.*all_theory[23] + 0.25*norm**2.*b2**2.*all_theory[1] +b1*b2*norm**2.*all_theory[30]+ b2*norm**3.*all_theory[31] + b1*bG2*norm**2.*all_theory[32]+ bG2*norm**3.*all_theory[33] + b2*bG2*norm**2.*all_theory[4]+ bG2**2.*norm**2.*all_theory[5] + 2.*cs0*norm**2.*all_theory[11]/h**2. + (2.*bG2+0.8*bGamma3*norm)*norm**2.*(b1*all_theory[7]+norm*all_theory[8]))*h**3. + (inv_nbar)*Pshot + a0*inv_nbar*(k_grid/0.5)**2.  + fz**2.*b4*k_grid**2.*(norm**2.*fz**2./9. + 2.*fz*b1*norm/7. + b1**2./5)*(35./8.)*all_theory[13]*h + a2*(1./3.)*(10.**4.)*(k_grid/0.45)**2. + fNL_eq*(h**3.)*(all_theory[51]+b1*all_theory[52]+b1**2.*all_theory[53]+b1*b2*all_theory[60]+b2*all_theory[61]+b1*bG2*all_theory[62]+bG2*all_theory[63]) + 1.*(2.*b1*self.phif+self.phif**2.)*all_theory[17]*(h**3.) + 1.*self.phif*all_theory[16]*(h**3.) + fNL_orth*(h**3.)*(all_theory[75]+b1*all_theory[76]+b1**2.*all_theory[77]+b1*b2*all_theory[84]+b2*all_theory[85]+b1*bG2*all_theory[86]+bG2*all_theory[87]))
-                        self.P2 = self.bin_integrator((norm**2.*all_theory[18]+norm**4.*(all_theory[24])+norm**1.*b1*all_theory[19]+norm**3.*b1*(all_theory[25]) + b1**2.*norm**2.*all_theory[26] +b1*b2*norm**2.*all_theory[34]+ b2*norm**3.*all_theory[35] + b1*bG2*norm**2.*all_theory[36]+ bG2*norm**3.*all_theory[37] + 0.25*b2**2.*all_theory[42] + b2*bG2*all_theory[43] + (bG2**2.)*all_theory[44] + 2.*cs2*norm**2.*all_theory[12]/h**2. + (2.*bG2+0.8*bGamma3*norm)*norm**3.*all_theory[9])*h**3. + fz**2.*b4*k_grid**2.*((norm**2.*fz**2.*70. + 165.*fz*b1*norm+99.*b1**2.)*4./693.)*(35./8.)*all_theory[13]*h + a2*(10.**4.)*(2./3.)*(k_grid/0.45)**2.+ fNL_eq*(h**3.)*(all_theory[54]+b1*all_theory[55]+b1**2.*all_theory[56]+b1*b2*all_theory[64]+b2*all_theory[65]+b1*bG2*all_theory[66]+bG2*all_theory[67]) + 1.*self.phif*all_theory[19]*(h**3.) + fNL_orth*(h**3.)*(all_theory[78]+b1*all_theory[79]+b1**2.*all_theory[80]+b1*b2*all_theory[88]+b2*all_theory[89]+b1*bG2*all_theory[90]+bG2*all_theory[91]))
-                        self.P4 = self.bin_integrator((norm**2.*all_theory[20]+norm**4.*all_theory[27]+b1*norm**3.*all_theory[28]+b1**2.*norm**2.*all_theory[29] + b2*norm**3.*all_theory[38] + bG2*norm**3.*all_theory[39] + b1*b2*all_theory[40] + b1*bG2*all_theory[41] + 0.25*b2**2.*all_theory[45] + b2*bG2*all_theory[46] + (bG2**2.)*all_theory[47] +2.*cs4*norm**2.*all_theory[13]/h**2.)*h**3. + fz**2.*b4*k_grid**2.*(norm**2.*fz**2.*210./143. + 30.*fz*b1*norm/11.+b1**2.)*all_theory[13]*h+fNL_eq*(h**3.)*(all_theory[57]+b1*all_theory[58]+b1**2.*all_theory[59]+b1*b2*all_theory[68]+b2*all_theory[69]+b1*bG2*all_theory[70]+bG2*all_theory[71]) + fNL_orth*(h**3.)*(all_theory[81]+b1*all_theory[82]+b1**2.*all_theory[83]+b1*b2*all_theory[92]+b2*all_theory[93]+b1*bG2*all_theory[94]+bG2*all_theory[95]))
-                
-        def _load_individual_derivatives(self, b1):
+                if not hasattr(self, 'phif') and self.use_eq_orth:
+                    prefactor = (18./5.)*(b1-1.)*1.686/self.Tk
+                    self.phif1 = (self.fNL_eq+self.fNL_orth)*prefactor*(k_grid/0.45)**2.
+
+                if not hasattr(self, 'phifcoll1_1') and self.use_collider:
+                    prefactor = (18./5.)*(b1-1.)*1.686/self.Tk
+                    fNL_val_dotpi2   = self.norm_count_dotpi2*self.beta_dotpi2
+                    fNL_val_nablapi2 = self.norm_count_nablapi2*self.beta_nablapi2
+
+                    self.phifcoll1_1  = (fNL_val_dotpi2 + fNL_val_nablapi2)*prefactor*(k_grid/0.45)**1.5*np.cos(mu*np.log(k_grid/0.45))
+                    self.phifcoll1_2  = (fNL_val_dotpi2 + fNL_val_nablapi2)*prefactor*(k_grid/0.45)**1.5*np.sin(mu*np.log(k_grid/0.45))
+
+                # Initialize arrays
+                theory_Pl = np.zeros((len(k_grid),3))
+
+                # Compute the power spectrum multipoles for Gaussian initial conditions
+                theory_Pl[:,0] = (norm**2.*all_theory[15]+norm**4.*(all_theory[21])+norm**1.*b1*all_theory[16]+norm**3.*b1*(all_theory[22]) + norm**0.*b1**2.*all_theory[17] +norm**2.*b1**2.*all_theory[23] + 0.25*norm**2.*b2**2.*all_theory[1] +b1*b2*norm**2.*all_theory[30]+ b2*norm**3.*all_theory[31] + b1*bG2*norm**2.*all_theory[32]+ bG2*norm**3.*all_theory[33] + b2*bG2*norm**2.*all_theory[4]+ bG2**2.*norm**2.*all_theory[5] + 2.*cs0*norm**2.*all_theory[11]/h**2. + (2.*bG2+0.8*bGamma3*norm)*norm**2.*(b1*all_theory[7]+norm*all_theory[8]))*h**3. + (inv_nbar)*Pshot + a0*inv_nbar*(k_grid/0.5)**2.  + fz**2.*b4*k_grid**2.*(norm**2.*fz**2./9. + 2.*fz*b1*norm/7. + b1**2./5)*(35./8.)*all_theory[13]*h + a2*(1./3.)*(10.**4.)*(k_grid/0.45)**2.
+                theory_Pl[:,1] = (norm**2.*all_theory[18]+norm**4.*(all_theory[24])+norm**1.*b1*all_theory[19]+norm**3.*b1*(all_theory[25]) + b1**2.*norm**2.*all_theory[26] +b1*b2*norm**2.*all_theory[34]+ b2*norm**3.*all_theory[35] + b1*bG2*norm**2.*all_theory[36]+ bG2*norm**3.*all_theory[37] + 0.25*b2**2.*all_theory[42] + b2*bG2*all_theory[43] + (bG2**2.)*all_theory[44] + 2.*cs2*norm**2.*all_theory[12]/h**2. + (2.*bG2+0.8*bGamma3*norm)*norm**3.*all_theory[9])*h**3. + fz**2.*b4*k_grid**2.*((norm**2.*fz**2.*70. + 165.*fz*b1*norm+99.*b1**2.)*4./693.)*(35./8.)*all_theory[13]*h + a2*(10.**4.)*(2./3.)*(k_grid/0.45)**2.
+                theory_Pl[:,2] = (norm**2.*all_theory[20]+norm**4.*all_theory[27]+b1*norm**3.*all_theory[28]+b1**2.*norm**2.*all_theory[29] + b2*norm**3.*all_theory[38] + bG2*norm**3.*all_theory[39] + b1*b2*all_theory[40] + b1*bG2*all_theory[41] + 0.25*b2**2.*all_theory[45] + b2*bG2*all_theory[46] + (bG2**2.)*all_theory[46] +2.*cs4*norm**2.*all_theory[13]/h**2.)*h**3. + fz**2.*b4*k_grid**2.*(norm**2.*fz**2.*210./143. + 30.*fz*b1*norm/11.+b1**2.)*all_theory[13]*h
+
+                # Add fNL-eq/orth terms
+                if self.use_eq_orth:
+
+                    # Eq
+                    theory_Pl[:,0] += self.fNL_eq*(h**3.)*(all_theory[51]+b1*all_theory[52]+b1**2.*all_theory[53]+b1*b2*all_theory[60]+b2*all_theory[61]+b1*bG2*all_theory[62]+bG2*all_theory[63])
+                    theory_Pl[:,1] += self.fNL_eq*(h**3.)*(all_theory[54]+b1*all_theory[55]+b1**2.*all_theory[56]+b1*b2*all_theory[64]+b2*all_theory[65]+b1*bG2*all_theory[66]+bG2*all_theory[67])
+                    theory_Pl[:,2] += self.fNL_eq*(h**3.)*(all_theory[57]+b1*all_theory[58]+b1**2.*all_theory[59]+b1*b2*all_theory[68]+b2*all_theory[69]+b1*bG2*all_theory[70]+bG2*all_theory[71])
+
+                    # Orth
+                    theory_Pl[:,0] += self.fNL_orth*(h**3.)*(all_theory[75]+b1*all_theory[76]+b1**2.*all_theory[77]+b1*b2*all_theory[84]+b2*all_theory[85]+b1*bG2*all_theory[86]+bG2*all_theory[87])
+                    theory_Pl[:,1] += self.fNL_orth*(h**3.)*(all_theory[78]+b1*all_theory[79]+b1**2.*all_theory[80]+b1*b2*all_theory[88]+b2*all_theory[89]+b1*bG2*all_theory[90]+bG2*all_theory[91])
+                    theory_Pl[:,2] += self.fNL_orth*(h**3.)*(all_theory[81]+b1*all_theory[82]+b1**2.*all_theory[83]+b1*b2*all_theory[92]+b2*all_theory[93]+b1*bG2*all_theory[94]+bG2*all_theory[95])
+
+                    # Counterterms
+                    theory_Pl[:,0] +=  (2.*b1*bphi*self.phif1+bphi**2*self.phif1**2.)*all_theory[17]*(h**3.) + 1.*bphi*self.phif1*all_theory[16]*(h**3.)
+                    theory_Pl[:,1] += bphi*self.phif1*all_theory[19]*(h**3.)
+
+                # Add collider terms
+                if self.use_collider:
+                    for i in range(3):
+                        theory_Pl[:,i] += (self.beta_dotpi2*(h**3.)*(self.Pl_dotpi2[:,i,0]+b1*self.Pl_dotpi2[:,i,1]+b1*b1*self.Pl_dotpi2[:,i,2]+(b2/2.)*self.Pl_dotpi2[:,i,3]+bG2*self.Pl_dotpi2[:,i,4]+(b1*b2/2.)*self.Pl_dotpi2[:,i,5]+(b1*bG2)*self.Pl_dotpi2[:,i,6])).ravel()
+                        theory_Pl[:,i] += (self.beta_nablapi2*(h**3.)*(self.Pl_nablapi2[:,i,0]+b1*self.Pl_nablapi2[:,i,1]+b1*b1*self.Pl_nablapi2[:,i,2]+(b2/2.)*self.Pl_nablapi2[:,i,3]+bG2*self.Pl_nablapi2[:,i,4]+(b1*b2/2.)*self.Pl_nablapi2[:,i,5]+(b1*bG2)*self.Pl_nablapi2[:,i,6])).ravel()
+
+                    # Counterterms
+                    theory_Pl[:,0] += (2.*b1*bphi_coll_1*self.phifcoll1_1+bphi_coll_1**2*self.phifcoll1_1**2.)*all_theory[17]*(h**3.) + 1.*bphi_coll_1*self.phifcoll1_1*all_theory[16]*(h**3.)+(2.*b1*bphi_coll_2*self.phifcoll1_2+bphi_coll_2**2*self.phifcoll1_2**2.)*all_theory[17]*(h**3.) + 1.*bphi_coll_2*self.phifcoll1_2*all_theory[16]*(h**3.)
+                    theory_Pl[:,1] += bphi_coll_1*self.phifcoll1_1*all_theory[19]*(h**3.)+bphi_coll_2*self.phifcoll1_2*all_theory[19]*(h**3.)
+
+                # Apply bin integration if requested
+                self.Pl = np.zeros((len(self.kPQ),3))
+                for i in range(3):
+                    self.Pl[:,i] = self.bin_integrator(theory_Pl[:,i])
+
+        def _load_individual_derivatives(self, biases):
                 """Compute individual derivatives needed to construct Pl and Q0 derivatives. This preloads the quantities requiring bin integration."""
 
                 # Load quantities
@@ -321,8 +439,10 @@ class PkTheory(object):
                 h = self.h
                 fz = self.fz
                 k_grid = self.k_grid
-                
+                b1 = biases['b1']
+
                 # Compute derivatives, including bin integration if requested
+                zeros = np.zeros(len(self.kPQ))
                 self.deriv0_bGamma3 = self.bin_integrator((0.8*norm)*norm**2.*(b1*all_theory[7]+norm*all_theory[8])*h**3.)
                 self.deriv2_bGamma3 = self.bin_integrator((0.8*norm)*norm**3.*all_theory[9]*h**3.)
                 self.deriv0_cs0 = self.bin_integrator(2.*norm**2.*all_theory[11]*h**1.)
@@ -330,92 +450,104 @@ class PkTheory(object):
                 self.deriv4_cs4 = self.bin_integrator(2.*norm**2.*all_theory[13]*h**1.)
                 self.derivN_b4 = self.bin_integrator(fz**2.*k_grid**2.*all_theory[13]*h)
 
-                # Derivatives involving fNL
-                if self.fNL_eq==0 and self.fNL_orth==0:
-                        self.deriv0_bphi = np.zeros(len(self.kPQ))
-                        self.deriv2_bphi = np.zeros(len(self.kPQ))
-                else:
-                        self.deriv0_bphi = self.bin_integrator((2.*b1*self.phif1+2.*self.phif1*self.phif)*all_theory[17]*(h**3.) + self.phif1*all_theory[16]*(h**3.))
-                        self.deriv2_bphi = self.bin_integrator(self.phif1*all_theory[19]*(h**3.))
-                
-        def compute_Pl_derivatives(self, b1):
+                # Add derivatives for bphi parameters
+                self.deriv0_bphi = np.zeros(len(self.kPQ))
+                self.deriv2_bphi = np.zeros(len(self.kPQ))
+                self.deriv0_bphi_coll = np.zeros(len(self.kPQ))
+                self.deriv2_bphi_coll = np.zeros(len(self.kPQ))
+
+                if self.use_eq_orth:
+                    bphi = biases['bphi']
+                    self.deriv0_bphi      = self.bin_integrator((2.*b1*self.phif1    +2.*bphi*self.phif1**2)*all_theory[17]*(h**3.)         + self.phif1*all_theory[16]*(h**3.))
+                    self.deriv2_bphi      = self.bin_integrator(self.phif1*all_theory[19]*(h**3.))
+
+                if self.use_collider:
+                    bphi_coll_1 = biases['bphi_coll_1']
+                    bphi_coll_2 = biases['bphi_coll_2']
+                    self.deriv0_bphi_coll_1 = self.bin_integrator((2.*b1*self.phifcoll1_1+2.*bphi_coll_1*self.phifcoll1_1**2)*all_theory[17]*(h**3.) + self.phifcoll1_1*all_theory[16]*(h**3.))
+                    self.deriv2_bphi_coll_1 = self.bin_integrator(self.phifcoll1_1*all_theory[19]*(h**3.))
+                    self.deriv0_bphi_coll_2 = self.bin_integrator((2.*b1*self.phifcoll1_2+2.*bphi_coll_2*self.phifcoll1_2**2)*all_theory[17]*(h**3.) + self.phifcoll1_2*all_theory[16]*(h**3.))
+                    self.deriv2_bphi_coll_2 = self.bin_integrator(self.phifcoll1_2*all_theory[19]*(h**3.))
+
+        def compute_Pl_derivatives(self, biases):
                 """Compute the derivatives of the power spectrum multipoles with respect to parameters entering the model linearly"""
-                
+
                 # Load quantities
                 norm = self.norm
                 fz = self.fz
                 kPQ = self.kPQ
                 nP = self.nP
-                
+                nlP = self.nlP
+                b1 = biases['b1']
+
                 # Compute individual derivatives
                 if not hasattr(self, 'deriv0_bGamma3'):
-                        self._load_individual_derivatives(b1)
-                
-                # Initialize arrays
-                deriv_bGamma3P, deriv_cs0P, deriv_cs2P, deriv_cs4P, deriv_b4P, deriv_PshotP, deriv_a0P, deriv_a2P, deriv_bphiP = [np.zeros(3*nP) for _ in range(9)]
+                        self._load_individual_derivatives(biases)
 
                 # Assemble stacked derivatives
-                deriv_bGamma3P[:nP] = self.deriv0_bGamma3[:nP]
-                deriv_bGamma3P[nP:2*nP] = self.deriv2_bGamma3[:nP]
+                zeros = np.zeros(nP)
+                derivP = {}
+                derivP['bGamma3'] = np.concatenate([self.deriv0_bGamma3[:nP],self.deriv2_bGamma3[:nP],zeros])[:nP*nlP]
+                derivP['cs0'] = np.concatenate([self.deriv0_cs0[:nP],zeros,zeros])[:nP*nlP]
+                derivP['cs2'] = np.concatenate([zeros,self.deriv2_cs2[:nP],zeros])[:nP*nlP]
+                derivP['cs4'] = np.concatenate([zeros,zeros,self.deriv4_cs4[:nP]])[:nP*nlP]
+                derivP['b4'] = np.concatenate([self.derivN_b4[:nP]*(norm**2.*fz**2./9.+2.*fz*b1*norm/7. + b1**2./5)*(35./8.),
+                                               self.derivN_b4[:nP]*((norm**2.*fz**2.*70.+165.*fz*b1*norm+99.*b1**2.)*4./693.)*(35./8.),
+                                               self.derivN_b4[:nP]*(norm**2.*fz**2.*210./143.+30.*fz*b1*norm/11.+b1**2.)])[:nP*nlP]
+                derivP['Pshot'] = np.concatenate([1.+zeros, zeros, zeros])[:nP*nlP]
+                derivP['a0'] = np.concatenate([(kPQ[:nP]/0.45)**2., zeros, zeros])[:nP*nlP]
+                derivP['a2'] = np.concatenate([(1./3.)*(kPQ[:nP]/0.45)**2., (2./3.)*(kPQ[:nP]/0.45)**2., zeros])[:nP*nlP]
 
-                deriv_cs0P[:nP] = self.deriv0_cs0[:nP]
-                deriv_cs2P[nP:2*nP] = self.deriv2_cs2[:nP]
-                deriv_cs4P[2*nP:3*nP] = self.deriv4_cs4[:nP]
+                if self.use_eq_orth:
+                    derivP['bphi'] = np.concatenate([self.deriv0_bphi[:nP], self.deriv2_bphi[:nP], zeros])[:nP*nlP]
 
-                deriv_b4P[:nP] = self.derivN_b4[:nP]*(norm**2.*fz**2./9. + 2.*fz*b1*norm/7. + b1**2./5)*(35./8.)
-                deriv_b4P[nP:2*nP] = self.derivN_b4[:nP]*((norm**2.*fz**2.*70. + 165.*fz*b1*norm+99.*b1**2.)*4./693.)*(35./8.)
-                deriv_b4P[2*nP:3*nP] = self.derivN_b4[:nP]*(norm**2.*fz**2.*210./143. + 30.*fz*b1*norm/11.+b1**2.)
+                if self.use_collider:
+                    derivP['bphi_coll_1'] = np.concatenate([self.deriv0_bphi_coll_1[:nP],self.deriv2_bphi_coll_1[:nP], zeros])[:nP*nlP]
+                    derivP['bphi_coll_2'] = np.concatenate([self.deriv0_bphi_coll_2[:nP],self.deriv2_bphi_coll_2[:nP], zeros])[:nP*nlP]
 
-                deriv_PshotP[:nP] = 1.
-                
-                deriv_a0P[:nP] = (kPQ[:nP]/0.45)**2.
-                
-                deriv_a2P[:nP] = (1./3.)*(kPQ[:nP]/0.45)**2.
-                deriv_a2P[nP:2*nP] = (2./3.)*(kPQ[:nP]/0.45)**2.
+                return derivP
 
-                deriv_bphiP[:nP] = self.deriv0_bphi[:nP]
-                deriv_bphiP[nP:2*nP] = self.deriv2_bphi[:nP]
-
-                return deriv_bGamma3P, deriv_cs0P, deriv_cs2P, deriv_cs4P, deriv_b4P, deriv_PshotP, deriv_a0P, deriv_a2P, deriv_bphiP
-                
-        def compute_Q0_derivatives(self, b1):
+        def compute_Q0_derivatives(self, biases):
                 """Compute the derivatives of Q0 with respect to parameters entering the model linearly"""
-                
+
                 # Load quantities
                 norm = self.norm
                 h = self.h
                 fz = self.fz
                 kPQ = self.kPQ
                 nP = self.nP
-                
+                b1 = biases['b1']
+
                 # Compute individual derivatives
                 if not hasattr(self, 'deriv0_bGamma3'):
-                        self._load_individual_derivatives(b1)
-                
-                # Initialize arrays
-                deriv_bGamma3Q, deriv_cs0Q, deriv_cs2Q, deriv_cs4Q, deriv_b4Q, deriv_PshotQ, deriv_a0Q, deriv_a2Q = [np.zeros(self.nQ) for _ in range(8)]
+                        self._load_individual_derivatives(biases)
 
                 # Assemble stacked derivatives
-                deriv_bGamma3Q = self.deriv0_bGamma3[nP:] - 1./2.*self.deriv2_bGamma3[nP:]
-                deriv_cs0Q = self.deriv0_cs0[nP:]
-                deriv_cs2Q = -1./2.*self.deriv2_cs2[nP:]
-                deriv_cs4Q = 3./8.*self.deriv4_cs4[nP:]
-                deriv_b4Q = self.derivN_b4[nP:]*((norm**2.*fz**2./9. + 2.*fz*b1*norm/7. + b1**2./5)*(35./8.) - ((norm**2.*fz**2.*70. + 165.*fz*b1*norm+99.*b1**2.)*4./693.)*(35./8.)/2. +3.*(norm**2.*fz**2.*210./143. + 30.*fz*b1*norm/11.+b1**2.)/8.)
-                deriv_PshotQ = 1.
-                deriv_a0Q = (kPQ[nP:]/0.45)**2.
-                deriv_bphiQ = self.deriv0_bphi[nP:] - 1./2.*self.deriv2_bphi[nP:]
+                derivQ = {}
+                derivQ['bGamma3'] = self.deriv0_bGamma3[nP:] - 1./2.*self.deriv2_bGamma3[nP:]
+                derivQ['cs0'] = self.deriv0_cs0[nP:]
+                derivQ['cs2'] = -1./2.*self.deriv2_cs2[nP:]
+                derivQ['cs4'] = 3./8.*self.deriv4_cs4[nP:]
+                derivQ['b4'] = self.derivN_b4[nP:]*((norm**2.*fz**2./9. + 2.*fz*b1*norm/7. + b1**2./5)*(35./8.) - ((norm**2.*fz**2.*70. + 165.*fz*b1*norm+99.*b1**2.)*4./693.)*(35./8.)/2. +3.*(norm**2.*fz**2.*210./143. + 30.*fz*b1*norm/11.+b1**2.)/8.)
+                derivQ['Pshot'] = 1.
+                derivQ['a0'] = (kPQ[nP:]/0.45)**2.
+                derivQ['a2'] = 0.*derivQ['a0']
+                if self.use_eq_orth:
+                    derivQ['bphi'] = self.deriv0_bphi[nP:] - 1./2.*self.deriv2_bphi[nP:]
 
-                return deriv_bGamma3Q, deriv_cs0Q, deriv_cs2Q, deriv_cs4Q, deriv_b4Q, deriv_PshotQ, deriv_a0Q, deriv_a2Q, deriv_bphiQ
+                if self.use_collider:
+                    derivQ['bphi_coll_1'] = self.deriv0_bphi_coll_1[nP:] - 1./2.*self.deriv2_bphi_coll_1[nP:]
+                    derivQ['bphi_coll_2'] = self.deriv0_bphi_coll_2[nP:] - 1./2.*self.deriv2_bphi_coll_2[nP:]
+
+                return derivQ
 
 class BkTheory(object):
-        def __init__(self, options, zi, As, fNL_eq, fNL_orth, apar, aperp, fz, sigma8, r_bao, k_grid, Tfunc, Pk_lin_table1, Pk_lin_table2, inv_nbar, gauss_w, gauss_w2, mesh_mu, nB):
+        def __init__(self, options, As, zi, ng_params, apar, aperp, fz, sigma8, r_bao, k_grid, Tfunc, Pk_lin_table1, Pk_lin_table2, inv_nbar, gauss_w, gauss_w2, mesh_mu):
                 """Compute the theoretical power spectrum P(k) and parameter derivatives for a given cosmology and set of nuisance parameters."""
-                
+
                 # Load variables
                 self.options = options
                 self.dataset = options.dataset
-                self.fNL_eq = fNL_eq
-                self.fNL_orth = fNL_orth
                 self.apar = apar
                 self.aperp = aperp
                 self.fz = fz
@@ -425,14 +557,28 @@ class BkTheory(object):
                 self.gauss_w = gauss_w
                 self.gauss_w2 = gauss_w2
                 self.mesh_mu = mesh_mu
-                self.nB = nB
-                self.oneloop_B = options.oneloop_B
                 self.k_grid = k_grid
-                self.triangle_indices = options.dataset.triangle_indices[zi]
-                self.kB = options.dataset.kB[zi]
-                self.dkB = options.dataset.dkB[zi]
-                
-                # Load fNL variables
+
+                self.triangle_indices = self.dataset.triangle_indices[zi]
+                self.kB = self.dataset.kB[zi]
+                self.dkB = self.dataset.dkB[zi]
+                self.nB = self.dataset.nB[zi]
+                self.nlB = self.dataset.nlB
+
+                self.use_eq_orth = options.use_eq_orth
+                self.use_collider = options.use_collider
+
+                # Non-Gaussianity parameters
+                if self.use_eq_orth:
+                    self.fNL_eq = ng_params['fNL_eq']
+                    self.fNL_orth = ng_params['fNL_orth']
+                if self.use_collider:
+                    self.beta_dotpi2 = ng_params['beta_dotpi2']
+                    self.beta_nablapi2 = ng_params['beta_nablapi2']
+                    self.mu = ng_params['mu']
+                    self.cs = ng_params['cs']
+
+                # Load functions and tables
                 self.Tfunc = Tfunc
                 self.Azeta = As*2.*np.pi**2.
                 self.Pk_lin_table1 = Pk_lin_table1
@@ -449,7 +595,7 @@ class BkTheory(object):
 
                 return np.matmul(np.matmul(np.matmul(np.matmul(np.matmul(B_matrix,self.gauss_w2)/2.,self.gauss_w2)/2.,self.gauss_w),self.gauss_w),self.gauss_w)
 
-        def _Bk_eq(self, k1, k2, k3): 
+        def _Bk_eq(self, k1, k2, k3):
                 """Equilateral fNL bispectrum template"""
 
                 return self.Azeta**2.*(self.Tfunc(k1)*self.Tfunc(k2)*self.Tfunc(k3)*(18./5.)*(-1./k1**3./k2**3.-1./k3**3./k2**3.-1./k1**3./k3**3.-2./k1**2./k2**2./k3**2.+1/k1/k2**2./k3**3.+1/k1/k3**2./k2**3.+1/k2/k3**2./k1**3.+1/k2/k1**2./k3**3.+1/k3/k1**2./k2**3.+1/k3/k2**2./k1**3.))
@@ -467,6 +613,17 @@ class BkTheory(object):
                 Bfunc = self.Azeta**2.*(18./5.)*self.Tfunc(k1)*self.Tfunc(k2)*self.Tfunc(k3)*(1./(k1**2.*k2**2.*k3**2.))*((1.+p_here)*D_here/e3 -p_here*G_here**3./e3**2.)/N_orth
                 return Bfunc
 
+        def _Bk_collider(self,k1,k2,k3,mu,cs):
+
+            norm_0 = (-10./9.)*cs, (5./9.)/cs
+            shapes = self.dataset.collider_shapes(k2/k1,k3/k1,mu,cs)
+
+            prefactor = (18./5.)*np.power(self.Azeta,2.0)/(k1*k2*k3)**2.0*self.Tfunc(k1)*self.Tfunc(k2)*self.Tfunc(k3)
+
+            dotpi2 = prefactor*norm_0[0]*shapes[0]
+            nablapi2 = prefactor*norm_0[1]*shapes[1]
+            return dotpi2, nablapi2
+
         def _load_IR_resummation(self, b1, c1):
                 """Load quantities relevant to IR resummation of bispectrum"""
 
@@ -483,7 +640,7 @@ class BkTheory(object):
                 # Wiggly power spectrum
                 Pw = (self.Pk_lin_table1-self.Pk_lin_table2)/(np.exp(-k_grid**2.*Sigma)-np.exp(-k_grid**2.*Sigma)*(1+k_grid**2.*Sigma))
                 Pwfunc = interpolate.InterpolatedUnivariateSpline(k_grid,Pw,ext=3)
-                
+
                 # Non-Wiggly power spectrum
                 Pnw = self.Pk_lin_table1 - Pw*np.exp(-k_grid**2.*Sigma)
                 Pnwfunc = interpolate.InterpolatedUnivariateSpline(k_grid,Pnw,ext=3)
@@ -495,66 +652,20 @@ class BkTheory(object):
                 # IR resummed spectra
                 self.P_IR = lambda k, mu: Pnwfunc(k) +  np.exp(-k**2.*(Sigma2*(1.+2.*fz*mu**2.*(2.+fz)) + deltaSigma2*mu**2.*fz**2.*(mu**2.-1.)))*Pwfunc(k) -(c1*mu**2.)*(k/0.3)**2.*P0int(k)/(b1+fz*mu**2.)
                 self.P_IRC = lambda k, mu:Pnwfunc(k) +  np.exp(-k**2.*(Sigma2*(1.+2.*fz*mu**2.*(2.+fz)) + deltaSigma2*mu**2.*fz**2.*(mu**2.-1.)))*Pwfunc(k) -(mu**2.)*(k/0.3)**2.*P0int(k)/(b1+fz*mu**2.)
-        
-        def _reorder_kmu(self,k1AP,k2AP,k3AP,mu1AP,mu2AP,mu3AP):
-                """Switch k and mu vectors into the ordering with k1 >= k2 >= k3, as needed for the interpolators."""
-                
-                # Order k vectors
-                args = np.argsort([k1AP,k2AP,k3AP],axis=0)
 
-                # Define ordered set
-                k1APord = np.zeros_like(k1AP)
-                k2APord = np.zeros_like(k2AP)
-                k3APord = np.zeros_like(k3AP)
-                mu1APord = np.zeros_like(mu1AP)
-                mu2APord = np.zeros_like(mu2AP)
-                mu3APord = np.zeros_like(mu3AP)
-
-                # biggest k
-                k1APord[args[2]==0] = k1AP[args[2]==0]
-                k1APord[args[2]==1] = k2AP[args[2]==1]
-                k1APord[args[2]==2] = k3AP[args[2]==2]
-                mu1APord[args[2]==0] = mu1AP[args[2]==0]
-                mu1APord[args[2]==1] = mu2AP[args[2]==1]
-                mu1APord[args[2]==2] = mu3AP[args[2]==2]
-
-                # middle k
-                k2APord[args[1]==0] = k1AP[args[1]==0]
-                k2APord[args[1]==1] = k2AP[args[1]==1]
-                k2APord[args[1]==2] = k3AP[args[1]==2]
-                mu2APord[args[1]==0] = mu1AP[args[1]==0]
-                mu2APord[args[1]==1] = mu2AP[args[1]==1]
-                mu2APord[args[1]==2] = mu3AP[args[1]==2]
-
-                # smallest k
-                k3APord[args[0]==0] = k1AP[args[0]==0]
-                k3APord[args[0]==1] = k2AP[args[0]==1]
-                k3APord[args[0]==2] = k3AP[args[0]==2]
-                mu3APord[args[0]==0] = mu1AP[args[0]==0]
-                mu3APord[args[0]==1] = mu2AP[args[0]==1]
-                mu3APord[args[0]==2] = mu3AP[args[0]==2]
-                
-                return k1APord, k2APord, k3APord, mu1APord, mu2APord, mu3APord
-                
-        def _compute_mu_vectors(self,mu1,mu2):
-                """Compute a list of mu vectors for the one-loop bispectrum computation."""
-                out = []
-                for i in range(11):
-                        for j in range(11):
-                                if i+j>12: continue
-                                if (i+j)%2==1: continue
-                                out.append(mu1**i*mu2**j)
-                return np.asarray(out)
-
-        def _compute_B_matrices_tree(self,beta,b1,b2,bG2,Pshot,Bshot,kc1,kc2,kc3,dk1,dk2,dk3,k1,k2,k3,mu1,phi):
+        def _compute_B_matrices_tree(self,biases,kc1,kc2,kc3,dk1,dk2,dk3,k1,k2,k3,mu1,phi):
                 """Load the tree-level bispectrum matrices for a given set of k bins. These will later be integrated over bins to form the bispectrum monopole and derivatives"""
-                
+
                 # Define local variables
-                fNL_eq = self.fNL_eq
-                fNL_orth = self.fNL_orth
                 apar = self.apar
                 aperp = self.aperp
                 inv_nbar = self.inv_nbar
+                b1 = biases['b1']
+                b2 = biases['b2']
+                bG2 = biases['bG2']
+                Pshot = biases['Pshot']
+                Bshot = biases['Bshot']
+                beta = self.fz/biases['b1']
 
                 # Bin centers
                 ddk1 = dk1/2.
@@ -590,273 +701,85 @@ class BkTheory(object):
                 FF2func1 = zz21*(1+beta*nnu1**2)*(1.+beta*nnu2**2.)*P_IR1*kk1*ddk1*P_IR2*kk2*ddk2*kk3*ddk3 + 1.*0.5*(Bshot*inv_nbar)*b1**2.*P_IR1*kk1*(1.+beta*nnu1**2.*(Bshot+1.*(1.+Pshot))/Bshot + beta**2.*nnu1**4.*1.*(1.+Pshot)/Bshot)*kk2*kk3*ddk1*ddk2*ddk3 + ((1.+Pshot)*inv_nbar)**2.*kk1*kk2*kk3*ddk1*ddk2*ddk3/2.
                 FF2func2 = zz22*(1+beta*nnu1**2)*(1.+beta*nnu3**2.)*P_IR1*kk1*ddk1*P_IR3*kk3*ddk3*kk2*ddk2 + 1.*0.5*(Bshot*inv_nbar)*b1**2.*P_IR2*kk2*(1.+beta*nnu2**2.*(Bshot+1.+1.*Pshot)/Bshot + beta**2.*nnu2**4.*1.*(1.+Pshot)/Bshot)*kk1*kk3*ddk1*ddk2*ddk3 + 0.*(1*inv_nbar)**2.*kk1*kk2*kk3*ddk1*ddk2*ddk3/6.
                 FF2func3 = zz23*(1+beta*nnu2**2)*(1.+beta*nnu3**2.)*P_IR2*kk2*ddk2*P_IR3*kk3*ddk3*kk1*ddk1 + 1.*0.5*(Bshot*inv_nbar)*b1**2.*P_IR3*kk3*(1.+beta*nnu3**2.*(Bshot+1.+1.*Pshot)/Bshot + beta**2.*nnu3**4.*1.*(1.+Pshot)/Bshot)*kk2*kk1*ddk1*ddk2*ddk3 + 0.*(1*inv_nbar)**2.*kk1*kk2*kk3*ddk1*ddk2*ddk3/6.
-                
+
                 FF2func1C = zz21*(1+beta*nnu1**2)*(1.+beta*nnu2**2.)*P_IR1C*kk1*ddk1*P_IR2C*kk2*ddk2*kk3*ddk3 + 1.*0.5*(Bshot*inv_nbar)*b1**2.*P_IR1C*kk1*(1.+beta*nnu1**2.*(Bshot+1.*(1.+Pshot))/Bshot + beta**2.*nnu1**4.*1.*(1.+Pshot)/Bshot)*kk2*kk3*ddk1*ddk2*ddk3 + ((1.+Pshot)*inv_nbar)**2.*kk1*kk2*kk3*ddk1*ddk2*ddk3/2.
                 FF2func2C = zz22*(1+beta*nnu1**2)*(1.+beta*nnu3**2.)*P_IR1C*kk1*ddk1*P_IR3C*kk3*ddk3*kk2*ddk2 + 1.*0.5*(Bshot*inv_nbar)*b1**2.*P_IR2C*kk2*(1.+beta*nnu2**2.*(Bshot+1.+1.*Pshot)/Bshot + beta**2.*nnu2**4.*1.*(1.+Pshot)/Bshot)*kk1*kk3*ddk1*ddk2*ddk3 + 0.*(1*inv_nbar)**2.*kk1*kk2*kk3*ddk1*ddk2*ddk3/6.
                 FF2func3C = zz23*(1+beta*nnu2**2)*(1.+beta*nnu3**2.)*P_IR2C*kk2*ddk2*P_IR3C*kk3*ddk3*kk1*ddk1 + 1.*0.5*(Bshot*inv_nbar)*b1**2.*P_IR3C*kk3*(1.+beta*nnu3**2.*(Bshot+1.+1.*Pshot)/Bshot + beta**2.*nnu3**4.*1.*(1.+Pshot)/Bshot)*kk2*kk1*ddk1*ddk2*ddk3 + 0.*(1*inv_nbar)**2.*kk1*kk2*kk3*ddk1*ddk2*ddk3/6.
 
                 # Add matrices for primordial non-Gaussianity
                 FFnlfunc = 0.
-                if fNL_eq!=0:
-                        FFnlfunc += fNL_eq*self._Bk_eq(kk1*qq1,kk2*qq2,kk3*qq3)*b1**3.*(1+beta*nnu1**2)*(1.+beta*nnu3**2.)*(1+beta*nnu2**2)*kk1*kk2*kk3*ddk1*ddk2*ddk3
-                if fNL_orth!=0:
-                        FFnlfunc += fNL_orth*self._Bk_orth(kk1*qq1,kk2*qq2,kk3*qq3)*b1**3.*(1+beta*nnu1**2)*(1.+beta*nnu3**2.)*(1+beta*nnu2**2)*kk1*kk2*kk3*ddk1*ddk2*ddk3
+
+                # Equilateral / orthogonal
+                if self.use_eq_orth:
+                    FFnlfunc += self.fNL_eq*self._Bk_eq(kk1*qq1,kk2*qq2,kk3*qq3)*b1**3.*(1+beta*nnu1**2)*(1.+beta*nnu3**2.)*(1+beta*nnu2**2)*kk1*kk2*kk3*ddk1*ddk2*ddk3
+                    FFnlfunc += self.fNL_orth*self._Bk_orth(kk1*qq1,kk2*qq2,kk3*qq3)*b1**3.*(1+beta*nnu1**2)*(1.+beta*nnu3**2.)*(1+beta*nnu2**2)*kk1*kk2*kk3*ddk1*ddk2*ddk3
+
+                # Collider shapes
+                if self.use_collider:
+                    Bk_collider = self._Bk_collider(kk1*qq1,kk2*qq2,kk3*qq3,self.mu,self.cs)
+                    FFnlfunc += self.beta_dotpi2*Bk_collider[0]*b1**3.*(1+beta*nnu1**2)*(1.+beta*nnu3**2.)*(1+beta*nnu2**2)*kk1*kk2*kk3*ddk1*ddk2*ddk3
+                    FFnlfunc += self.beta_nablapi2*Bk_collider[1]*b1**3.*(1+beta*nnu1**2)*(1.+beta*nnu3**2.)*(1+beta*nnu2**2)*kk1*kk2*kk3*ddk1*ddk2*ddk3
 
                 # Assemble output bispectrum matrices
-                B0_matrix = (2.*FF2func1 + 2.*FF2func2 + 2.*FF2func3 + FFnlfunc)/apar**2./aperp**4.
+                Bl_matrix = (2.*FF2func1 + 2.*FF2func2 + 2.*FF2func3 + FFnlfunc)/apar**2./aperp**4.
+
                 deriv_Pshot_matrix = (b1**2.*(1.*beta*nnu1**2.*(1.+beta*nnu1**2.)*P_IR1+P_IR2*(beta*nnu2**2.)*(1.+beta*nnu2**2.)+ P_IR3*(beta*nnu3**2.)*(1.+beta*nnu3**2.)) + 2.*inv_nbar*(1.+Pshot))*kk1*kk2*kk3*ddk1*ddk2*ddk3/apar**2./aperp**4.
                 deriv_Bshot_matrix = b1**2.*(((1.+beta*nnu1**2.)*P_IR1+P_IR2*(1.+beta*nnu2**2.)+ P_IR3*(1.+beta*nnu3**2.))*kk1*kk2*kk3*ddk1*ddk2*ddk3)/apar**2./aperp**4.
                 deriv_c1_matrix = (2.*FF2func1C + 2.*FF2func2C + 2.*FF2func3C - 2.*FF2func1 - 2.*FF2func2 - 2.*FF2func3)/apar**2./aperp**4.
 
-                # Add additional one-loop pieces
-                if self.oneloop_B:
-                        # Stochasticity
-                        deriv_eps2_matrix = (qq1**2+qq2**2+qq3**2)*kk1*kk2*kk3*ddk1*ddk2*ddk3/apar**2./aperp**4.
-                        deriv_eta21_matrix = (qq1**2*P_IR1+qq2**2*P_IR2+qq3**2*P_IR3)*kk1*kk2*kk3*ddk1*ddk2*ddk3/apar**2./aperp**4.
-                        deriv_eta22_matrix = ((qq2**2+qq3**2)*P_IR1+(qq1**2+qq3**2)*P_IR2+(qq1**2+qq2**2)*P_IR3)*kk1*kk2*kk3*ddk1*ddk2*ddk3/apar**2./aperp**4.
+                return Bl_matrix, deriv_Pshot_matrix, deriv_Bshot_matrix, deriv_c1_matrix
 
-                        # Counterterms / derivative operators
-                        k12 = ((qq3**2-qq1**2-qq2**2)**2./(2.*qq1*qq2)**2.-1.)*P_IR1*P_IR2
-                        k23 = ((qq1**2-qq2**2-qq3**2)**2./(2.*qq2*qq3)**2.-1.)*P_IR2*P_IR3
-                        k31 = ((qq2**2-qq1**2-qq3**2)**2./(2.*qq3*qq1)**2.-1.)*P_IR3*P_IR1
-                        deriv_betaBa_matrix = -((qq1**2+qq2**2)*zz21+(qq1**2+qq3**2)*zz22+(qq2**2+qq3**2)*zz23)*kk1*kk2*kk3*ddk1*ddk2*ddk3/apar**2./aperp**4.
-                        deriv_betaBb_matrix = -(qq3**2*zz21+qq2**2*zz22+qq1**2*zz23)*kk1*kk2*kk3*ddk1*ddk2*ddk3/apar**2./aperp**4.
-                        deriv_betaBc_matrix = -((qq1**2+qq2**2)*k12+(qq2**2+qq3**2)*k23+(qq1**2+qq3**2)*k31)*kk1*kk2*kk3*ddk1*ddk2*ddk3/apar**2./aperp**4.
-                        deriv_betaBd_matrix = -(qq3**2*k12+qq1**2*k23+qq2**2*k31)*kk1*kk2*kk3*ddk1*ddk2*ddk3/apar**2./aperp**4.
-                        deriv_betaBe_matrix = -((qq3**2-qq1**2-qq2**2)/2.*P_IR1*P_IR2+(qq1**2-qq2**2-qq3**2)/2.*P_IR2*P_IR3+(qq2**2-qq1**2-qq3**2)/2.*P_IR1*P_IR3)*kk1*kk2*kk3*ddk1*ddk2*ddk3/apar**2./aperp**4.
-                        
-                        return B0_matrix, deriv_Pshot_matrix, deriv_Bshot_matrix, deriv_c1_matrix, deriv_eps2_matrix, deriv_eta21_matrix, deriv_eta22_matrix, deriv_betaBa_matrix, deriv_betaBb_matrix, deriv_betaBc_matrix, deriv_betaBd_matrix, deriv_betaBe_matrix
-                else:
-                        return B0_matrix, deriv_Pshot_matrix, deriv_Bshot_matrix, deriv_c1_matrix
+        def compute_Bl_theory_derivs(self, biases):
+            """Compute the bispectrum at tree-level, given the bias parameters. This computes both the theory and the derivatives with respect to linear parameters."""
 
-        def compute_B_oneloop(self,s8,b1,b2,b3,g2,g3,g21,g2x,g22,g21x,g31,g211,f,kc1,kc2,kc3,dk1,dk2,dk3,k1,k2,k3,mu1,phi):
-                """Load the one-loop bispectrum for a given k-bin."""
-   
-                # Define local variables
-                apar = self.apar
-                aperp = self.aperp
+            # Define local variables
+            fz = self.fz
 
-                # Define lists of bias parameters
-                biasListB222 = [b1**3,b1**2*b2,b1*b2**2,b2**3,b1**2*f,b1**3*f,b1*b2*f,b1**2*b2*f,b2**2*f,b1*b2**2*f,b1*f**2,b1**2*f**2,b1**3*f**2,b2*f**2,
-                                b1*b2*f**2,b1**2*b2*f**2,b2**2*f**2,f**3,b1*f**3,b1**2*f**3,b1**3*f**3,b2*f**3,b1*b2*f**3,f**4,b1*f**4,b1**2*f**4,b2*f**4,f**5,
-                                b1*f**5,f**6,b1**2*g2,b1*b2*g2,b2**2*g2,b1*f*g2,b1**2*f*g2,b2*f*g2,b1*b2*f*g2,f**2*g2,b1*f**2*g2,b1**2*f**2*g2,b2*f**2*g2,
-                                f**3*g2,b1*f**3*g2,f**4*g2,b1*g2**2,b2*g2**2,f*g2**2,b1*f*g2**2,f**2*g2**2,g2**3]
-                biasListB321I = [b1**3,b1**2*b2,b1*b2**2,b1**2*b3,b1*b2*b3,b1**2*f,b1**3*f,b1*b2*f,b1**2*b2*f,b2**2*f,b1*b2**2*f,b1*b3*f,b1**2*b3*f,b2*b3*f,
-                                b1*f**2,b1**2*f**2,b1**3*f**2,b2*f**2,b1*b2*f**2,b1**2*b2*f**2,b2**2*f**2,b3*f**2,b1*b3*f**2,f**3,b1*f**3,b1**2*f**3,b1**3*f**3,
-                                b2*f**3,b1*b2*f**3,b3*f**3,f**4,b1*f**4,b1**2*f**4,b2*f**4,f**5,b1*f**5,f**6,b1**2*g2,b1*b2*g2,b1*b3*g2,b1*f*g2,b1**2*f*g2,
-                                b2*f*g2,b1*b2*f*g2,b3*f*g2,f**2*g2,b1*f**2*g2,b1**2*f**2*g2,b2*f**2*g2,f**3*g2,b1*f**3*g2,f**4*g2,b1*g2**2,f*g2**2,b1*f*g2**2,
-                                f**2*g2**2,b1**2*g21,b1*b2*g21,b1*f*g21,b1**2*f*g21,b2*f*g21,f**2*g21,b1*f**2*g21,f**3*g21,b1*g2*g21,f*g2*g21,b1**2*g2x,
-                                b1*b2*g2x,b1*f*g2x,b1**2*f*g2x,b2*f*g2x,f**2*g2x,b1*f**2*g2x,f**3*g2x,b1*g2*g2x,f*g2*g2x,b1**2*g3,b1*b2*g3,b1*f*g3,b1**2*f*g3,
-                                b2*f*g3,f**2*g3,b1*f**2*g3,f**3*g3,b1*g2*g3,f*g2*g3]
-                biasListB321II = [b1**3,b1**2*b2,b1**2*f,b1**3*f,b1*b2*f,b1*f**2,b1**2*f**2,b1**3*f**2,b2*f**2,b1*b2*f**2,b1**2*b2*f**2,f**3,b1*f**3,
-                                b1**2*f**3,b1**3*f**3,b2*f**3,b1*b2*f**3,f**4,b1*f**4,b1**2*f**4,b2*f**4,f**5,b1*f**5,f**6,b1**2*g2,b1*b2*g2,b1*f*g2,b1**2*f*g2,
-                                b2*f*g2,f**2*g2,b1*f**2*g2,b1**2*f**2*g2,f**3*g2,b1*f**3*g2,f**4*g2,b1*g2**2,f*g2**2,b1**2*g21,b1*b2*g21,b1*f*g21,b1**2*f*g21,
-                                b2*f*g21,f**2*g21,b1*f**2*g21,f**3*g21,b1*g2*g21,f*g2*g21]
-                biasListB411 = [b1**3,b1**2*b2,b1**2*b3,b1**2*f,b1**3*f,b1*b2*f,b1**2*b2*f,b1*b3*f,b1**2*b3*f,b1*f**2,b1**2*f**2,b1**3*f**2,b2*f**2,
-                                b1*b2*f**2,b1**2*b2*f**2,b3*f**2,b1*b3*f**2,f**3,b1*f**3,b1**2*f**3,b1**3*f**3,b2*f**3,b1*b2*f**3,b3*f**3,f**4,b1*f**4,
-                                b1**2*f**4,b2*f**4,f**5,b1*f**5,f**6,b1**2*g2,b1*f*g2,b1**2*f*g2,f**2*g2,b1*f**2*g2,b1**2*f**2*g2,f**3*g2,b1*f**3*g2,f**4*g2,
-                                b1**2*g21,b1*f*g21,b1**2*f*g21,f**2*g21,b1*f**2*g21,f**3*g21,b1**2*g211,b1*f*g211,f**2*g211,b1**2*g21x,b1*f*g21x,f**2*g21x,
-                                b1**2*g22,b1*f*g22,f**2*g22,b1**2*g2x,b1*f*g2x,b1**2*f*g2x,f**2*g2x,b1*f**2*g2x,f**3*g2x,b1**2*g3,b1*f*g3,b1**2*f*g3,f**2*g3,
-                                b1*f**2*g3,f**3*g3,b1**2*g31,b1*f*g31,f**2*g31]
+            # Load in bias parameters
+            b1 = biases['b1']
+            b2 = biases['b2']
+            bG2 = biases['bG2']
+            c1 = biases['c1']
+            Pshot = biases['Pshot']
+            Bshot = biases['Bshot']
+            beta = fz/b1
 
-                # Define derivatives with respect to bias parameters
-                biasListB321I_b3 = [0,0,0,b1**2,b1*b2,0,0,0,0,0,0,b1*f,b1**2*f,b2*f,0,0,0,0,0,0,0,f**2,b1*f**2,0,0,0,0,0,0,f**3,0,0,0,0,0,0,0,0,0,b1*g2,0,0,0,0,f*g2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-                biasListB411_b3 = [0,0,b1**2,0,0,0,0,b1*f,b1**2*f,0,0,0,0,0,0,f**2,b1*f**2,0,0,0,0,0,0,f**3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-                
-                biasListB321I_g3 = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,b1**2,b1*b2,b1*f,b1**2*f,b2*f,f**2,b1*f**2,f**3,b1*g2,f*g2]
-                biasListB411_g3 = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,b1**2,b1*f,b1**2*f,f**2,b1*f**2,f**3,0,0,0]
+            # Pre-compute IR resummation quantities
+            if not hasattr(self,'P_IR'):
+                    self._load_IR_resummation(b1, c1)
 
-                biasListB321I_g21 = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,b1**2,b1*b2,b1*f,b1**2*f,b2*f,f**2,b1*f**2,f**3,b1*g2,f*g2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-                biasListB321II_g21 = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,b1**2,b1*b2,b1*f,b1**2*f,b2*f,f**2,b1*f**2,f**3,b1*g2,f*g2]
-                biasListB411_g21 = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,b1**2,b1*f,b1**2*f,f**2,b1*f**2,f**3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+           # Iterate over bispectrum bins and compute B0
+            Bl = np.zeros((self.nB,self.nlB))
+            zeros = np.zeros(self.nB*self.nlB)
+            derivB = {'Pshot':zeros.copy(), 'Bshot':zeros.copy(), 'c1':zeros.copy()}
 
-                biasListB321I_g2x = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,b1**2,b1*b2,b1*f,b1**2*f,b2*f,f**2,b1*f**2,f**3,b1*g2,f*g2,0,0,0,0,0,0,0,0,0,0]
-                biasListB411_g2x = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,b1**2,b1*f,b1**2*f,f**2,b1*f**2,f**3,0,0,0,0,0,0,0,0,0] 
+            for j in range(int(self.nB)):
+                    # Bin-centers
+                    kc1, kc2, kc3 = self.kB[self.triangle_indices[0][j]], self.kB[self.triangle_indices[1][j]], self.kB[self.triangle_indices[2][j]]
+                    # Bin-widths
+                    dk1, dk2, dk3 = self.dkB, self.dkB, self.dkB
 
-                biasListB411_g22 = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,b1**2,b1*f,f**2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
-                
-                biasListB411_g21x = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,b1**2,b1*f,f**2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+                    # Check bin edges
+                    if (self.kB[self.triangle_indices[0][j]]<self.dkB) or (self.kB[self.triangle_indices[1][j]]<self.dkB) or (self.kB[self.triangle_indices[2][j]]<self.dkB):
+                            raise Exception('Lowest bispectrum bin center is below dk; alternative binning must be specified!')
 
-                biasListB411_g31 = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,b1**2,b1*f,f**2]
+                    # Idealized bin volume
+                    Nk123 = ((kc1+dk1/2.)**2.-(kc1-dk1/2.)**2.)*((kc2+dk2/2.)**2.-(kc2-dk2/2.)**2.)*((kc3+dk3/2.)**2.-(kc3-dk3/2.)**2.)/8.
 
-                biasListB411_g211 = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,b1**2,b1*f,f**2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+                    # Compute matrices
+                    B_matrix_tree, deriv_Pshot_matrix_tree, deriv_Bshot_matrix_tree, deriv_c1_matrix_tree = self._compute_B_matrices_tree(biases,kc1,kc2,kc3,dk1,dk2,dk3,*self.mesh_mu)
 
-                # Define bin parameters
-                ddk1 = dk1/2.
-                ddk2 = dk2/2.
-                ddk3 = dk3/2.
-                kk1 = (kc1+k1*ddk1)
-                kk2 = (kc2+k2*ddk2)
-                kk3 = (kc3+k3*ddk3)
+                    for li in range(self.nlB):
 
-                # Define mu1, mu2, mu3 angles
-                xxfunc = (kk3**2.-kk1**2.-kk2**2.)/(2.*kk1*kk2)
-                yyfunc = np.sqrt(np.abs(1.-xxfunc**2.))
-                mu2 = xxfunc*mu1 - np.sqrt(1.-mu1**2.)*yyfunc*np.cos(phi*2.*np.pi)
-                mu3 = -(kk2/kk3)*mu2-(kk1/kk3)*mu1
+                        # Compute Legendre weighting
+                        leg_factor = (4*li+1)*legendre(2*li)(self.mesh_mu[-2])
 
-                # Coordinate distortion on mu
-                nnu = lambda mu: mu/apar/(np.sqrt(np.abs(mu**2./apar**2. + (1-mu**2.)/aperp**2.)))
-                nnu1, nnu2, nnu3 = nnu(mu1), nnu(mu2), nnu(mu3)
-
-                # Coordinate distortion on length
-                qq = lambda mu: np.sqrt(np.abs(mu**2/apar**2 + (1.-mu**2)/aperp**2))
-                qq1, qq2, qq3 = qq(mu1), qq(mu2), qq(mu3)
-
-                ## Define new angles
-                shape = np.ones(nnu2.shape)
-                k1AP = (kk1*qq1)*shape
-                k2AP = (kk2*qq2)*shape
-                k3AP = (kk3*qq3)*shape
-                mu1AP = nnu1*shape
-                mu2AP = nnu2*shape
-                mu3AP = nnu3*shape
-                                
-                # Permute to get correct ordering               
-                k1APord, k2APord, k3APord, mu1APord, mu2APord, mu3APord = self._reorder_kmu(k1AP,k2AP,k3AP,mu1AP,mu2AP,mu3AP)                                
-
-                # Define mu array
-                muVec = np.moveaxis(self._compute_mu_vectors(mu1APord,mu2APord),0,-1)#[:,:,:,:,:,:,None]
-                
-                # Define volume element
-                volEl = (kk1*kk2*kk3*ddk1*ddk2*ddk3*shape)
-
-                def sum_mu(interp):
-                        """Sum the interpolated quantities over the mu bins"""
-                        return np.sum(muVec*interp,axis=5)
-    
-                # Perform the (vectorized) interpolation, including all angular components and biases
-                b222int = self.dataset.b222int(k1APord,k2APord,k3APord)
-                b321Iint = self.dataset.b321Iint(k1APord,k2APord,k3APord)
-                b321IIint = self.dataset.b321IIint(k1APord,k2APord,k3APord)
-                b411int = self.dataset.b411int(k1APord,k2APord,k3APord)
-                
-                b_matrix = sum_mu(np.matmul(b222int,biasListB222))
-                b_matrix += sum_mu(np.matmul(b321Iint,biasListB321I))
-                b_matrix += sum_mu(np.matmul(b321IIint,biasListB321II))
-                b_matrix += sum_mu(np.matmul(b411int,biasListB411))
-                
-                # Contribution bias derivatives
-                b_matrix_b3 = sum_mu(np.matmul(b321Iint,biasListB321I_b3))+sum_mu(np.matmul(b411int,biasListB411_b3))
-                b_matrix_g3 = sum_mu(np.matmul(b321Iint,biasListB321I_g3))+sum_mu(np.matmul(b411int,biasListB411_g3))
-                b_matrix_g21 = sum_mu(np.matmul(b321Iint,biasListB321I_g21))+sum_mu(np.matmul(b321IIint,biasListB321II_g21))+sum_mu(np.matmul(b411int,biasListB411_g21))
-                b_matrix_g2x = sum_mu(np.matmul(b321Iint,biasListB321I_g2x))+sum_mu(np.matmul(b411int,biasListB411_g2x))
-                b_matrix_g22 = sum_mu(np.matmul(b411int,biasListB411_g22))
-                b_matrix_g21x = sum_mu(np.matmul(b411int,biasListB411_g21x))
-                b_matrix_g31 = sum_mu(np.matmul(b411int,biasListB411_g31))
-                b_matrix_g211 = sum_mu(np.matmul(b411int,biasListB411_g211))
-
-                # Create list of derivatives
-                b_matrix_derivs = [b_matrix_b3,b_matrix_g3,b_matrix_g21,b_matrix_g2x,b_matrix_g22,b_matrix_g21x,b_matrix_g31,b_matrix_g211]
-
-                # Filter out elements that do not obey triangle conditions 
-                tol = 0. # 0.0025
-                triangle_conditions = ((np.abs(k1APord-k2APord)<=k3APord-tol)&(k3APord-tol<=(k1APord+k2APord)))
-                b_matrix = np.where(triangle_conditions,b_matrix,0.)
-                b_matrix_derivs = [np.where(triangle_conditions,b_matrix_derivs[i],0.) for i in range(len(b_matrix_derivs))]
-                
-                # Define bin volume (using only good triangles)
-                Nk123 = self._bin_integrate(volEl*triangle_conditions)
-
-                # Compute bin-integrated spectrum and normalize
-                b_integ = s8**6*self._bin_integrate(b_matrix*volEl*triangle_conditions)/Nk123/apar**2/aperp**4
-                b_integ_derivs = [s8**6*self._bin_integrate(b_matrix_derivs[i]*volEl*triangle_conditions)/Nk123/apar**2/aperp**4 for i in range(len(b_matrix_derivs))]
-
-                return b_integ, b_integ_derivs
-
-        def compute_B0_theory_derivs(self, bias_list):
-                """Compute the bispectrum (at tree- or one-loop order), given the bias parameters. This computes both the theory and the derivatives with respect to linear parameters."""
-
-                # Define local variables                                        
-                kB, dkB = self.kB, self.dkB
-                fNL_eq = self.fNL_eq
-                fNL_orth = self.fNL_orth
-                fz = self.fz
-                nB = self.nB
-                if self.oneloop_B:
-                        # Ratio of sigma8 to rescale fiducial 1-loop templates
-                        s8 = self.sigma8/self.options.sigma8_fid
-                
-                triangle_indices = self.triangle_indices
-
-                import time
-                start = time.time()
-
-                # Load in bias parameters
-                if not self.oneloop_B:
-                        b1, b2, bG2, c1, Pshot, Bshot = bias_list
-                else:
-                        b1, b2, bG2, bGamma3, b3, g3, g2x, g22, g21x, g31, g211, c1, Pshot, Bshot, eps2, eta21, eta22, betaBa, betaBb, betaBc, betaBd, betaBe = bias_list
-                        # Redefine to Eggemeier conventions
-                        g2 = bG2
-                        g21 = -4./7.*(bG2+bGamma3)
-                beta = fz/b1
-                
-                # Pre-compute IR resummation quantities
-                if not hasattr(self,'P_IR'):
-                        self._load_IR_resummation(b1, c1)
-
-                # Iterate over bispectrum bins and compute B0
-                B0 = np.zeros(nB)
-                deriv_PshotB, deriv_BshotB, deriv_c1B = [np.zeros(nB) for _ in range(3)]
-                if self.oneloop_B:
-                        deriv_b3, deriv_g3, deriv_g21, deriv_g2x, deriv_g22, deriv_g21x, deriv_g31, deriv_g211, deriv_eps2, deriv_eta21, deriv_eta22, deriv_betaBa, deriv_betaBb, deriv_betaBc, deriv_betaBd, deriv_betaBe = [np.zeros(nB) for _ in range(16)]
-
-                for j in range(int(nB)):
-                        # Bin-centers
-                        kc1, kc2, kc3 = kB[triangle_indices[0][j]], kB[triangle_indices[1][j]], kB[triangle_indices[2][j]]
-                        # Bin-widths
-                        dk1, dk2, dk3 = dkB, dkB, dkB
-                        
-                        # Check bin edges
-                        if (kB[triangle_indices[0][j]]<dkB) or (kB[triangle_indices[1][j]]<dkB) or (kB[triangle_indices[2][j]]<dkB): 
-                                raise Exception('Lowest bispectrum bin center is below dk; alternative binning must be specified!')
-                        
-                        # Idealized bin volume
-                        Nk123 = ((kc1+dk1/2.)**2.-(kc1-dk1/2.)**2.)*((kc2+dk2/2.)**2.-(kc2-dk2/2.)**2.)*((kc3+dk3/2.)**2.-(kc3-dk3/2.)**2.)/8.
-                        
-                        # Compute matrices
-                        if self.oneloop_B:
-                                B0_matrix_tree, deriv_Pshot_matrix_tree, deriv_Bshot_matrix_tree, deriv_c1_matrix_tree, deriv_eps2_matrix, deriv_eta21_matrix, deriv_eta22_matrix, deriv_betaBa_matrix, deriv_betaBb_matrix, deriv_betaBc_matrix, deriv_betaBd_matrix, deriv_betaBe_matrix = self._compute_B_matrices_tree(beta,b1,b2,bG2,Pshot,Bshot,kc1,kc2,kc3,dk1,dk2,dk3,*self.mesh_mu)
-                        else:
-                                B0_matrix_tree, deriv_Pshot_matrix_tree, deriv_Bshot_matrix_tree, deriv_c1_matrix_tree = self._compute_B_matrices_tree(beta,b1,b2,bG2,Pshot,Bshot,kc1,kc2,kc3,dk1,dk2,dk3,*self.mesh_mu)
-                        
                         # Integrate over bins to compute B0
-                        B0[j] = self._bin_integrate(B0_matrix_tree)/Nk123
-                        
+                        Bl[j,li] = self._bin_integrate(B_matrix_tree*leg_factor)/Nk123
+
                         # Update nuisance parameter covariance
-                        deriv_PshotB[j] = self._bin_integrate(deriv_Pshot_matrix_tree)/Nk123
-                        deriv_BshotB[j] = self._bin_integrate(deriv_Bshot_matrix_tree)/Nk123
-                        deriv_c1B[j] = self._bin_integrate(deriv_c1_matrix_tree)/Nk123
+                        derivB['Pshot'][li*self.nB+j] = self._bin_integrate(deriv_Pshot_matrix_tree*leg_factor)/Nk123
+                        derivB['Bshot'][li*self.nB+j] = self._bin_integrate(deriv_Bshot_matrix_tree*leg_factor)/Nk123
+                        derivB['c1'][li*self.nB+j] = self._bin_integrate(deriv_c1_matrix_tree*leg_factor)/Nk123
 
-                        if self.oneloop_B:
-                                B0_oneloop, B0_oneloop_derivs = self.compute_B_oneloop(s8,b1,b2,b3,g2,g3,g21,g2x,g22,g21x,g31,g211,fz,kc1,kc2,kc3,dk1,dk2,dk3,*self.mesh_mu)
-                                B0[j] += B0_oneloop
-                                # Also add on the signal from counterterms and stochasticity
-                                B0[j] += self._bin_integrate(deriv_eps2_matrix*eps2+deriv_eta21_matrix*eta21+deriv_eta22_matrix*eta22+deriv_betaBa_matrix*betaBa+deriv_betaBb_matrix*betaBb+deriv_betaBc_matrix*betaBc+deriv_betaBd_matrix*betaBd+deriv_betaBe_matrix*betaBe)/Nk123
-                                # Assemble derivatives
-                                deriv_b3[j] = B0_oneloop_derivs[0]
-                                deriv_g3[j] = B0_oneloop_derivs[1]
-                                deriv_g21[j] = B0_oneloop_derivs[2]
-                                deriv_g2x[j] = B0_oneloop_derivs[3]
-                                deriv_g22[j] = B0_oneloop_derivs[4]
-                                deriv_g21x[j] = B0_oneloop_derivs[5]
-                                deriv_g31[j] = B0_oneloop_derivs[6]
-                                deriv_g211[j] = B0_oneloop_derivs[7]
-                                deriv_eps2[j] = self._bin_integrate(deriv_eps2_matrix)/Nk123
-                                deriv_eta21[j] = self._bin_integrate(deriv_eta21_matrix)/Nk123
-                                deriv_eta22[j] = self._bin_integrate(deriv_eta22_matrix)/Nk123
-                                deriv_betaBa[j] = self._bin_integrate(deriv_betaBa_matrix)/Nk123
-                                deriv_betaBb[j] = self._bin_integrate(deriv_betaBb_matrix)/Nk123
-                                deriv_betaBc[j] = self._bin_integrate(deriv_betaBc_matrix)/Nk123
-                                deriv_betaBd[j] = self._bin_integrate(deriv_betaBd_matrix)/Nk123
-                                deriv_betaBe[j] = self._bin_integrate(deriv_betaBe_matrix)/Nk123
-                        
-                        
-                if self.oneloop_B:
-                        derivs = [deriv_PshotB, deriv_BshotB, deriv_c1B, deriv_b3, deriv_g3, deriv_g21, deriv_g2x, deriv_g22, deriv_g21x, deriv_g31, deriv_g211, deriv_eps2, deriv_eta21, deriv_eta22, deriv_betaBa, deriv_betaBb, deriv_betaBc, deriv_betaBd, deriv_betaBe]
-                else:
-                        derivs = [deriv_PshotB, deriv_BshotB, deriv_c1B]
-
-                return B0, derivs
-
+            return Bl, derivB

@@ -1,3 +1,73 @@
 # Nuisance parameters (need one set of biases per bin)
 
-full_shape_spectra.use_nuisance =['b^{(1)}_1','b^{(1)}_2','b^{(1)}_{G_2}','b^{(2)}_1','b^{(2)}_2','b^{(2)}_{G_2}','b^{(3)}_1','b^{(3)}_2','b^{(3)}_{G_2}','b^{(4)}_1','b^{(4)}_2','b^{(4)}_{G_2}','f^{eq}_{NL}','f^{orth}_{NL}','alpha_{r_s}']
+full_shape_spectra.use_nuisance =['b^{(1)}_1','b^{(1)}_2','b^{(1)}_{G_2}','b^{(2)}_1','b^{(2)}_2','b^{(2)}_{G_2}','b^{(3)}_1','b^{(3)}_2','b^{(3)}_{G_2}','b^{(4)}_1','b^{(4)}_2','b^{(4)}_{G_2}','f^{eq}_{NL}','f^{orth}_{NL}','beta_dotpi2','beta_nablapi2','mu','log10cs','alpha_{r_s}']
+
+## Sample parameters
+
+# Redshift and number of redshift slices to use (up to len(z))
+full_shape_spectra.z = [0.61, 0.61, 0.38, 0.38]
+full_shape_spectra.nz = 4
+
+# Approximate 1/nbar of survey
+full_shape_spectra.inv_nbar = [5000., 5000., 3500., 3500.]
+
+# Measurements
+full_shape_spectra.data_directory = data.path['data']
+full_shape_spectra.P_measurements = ['data/boss_pk_ngc_z3.dat','data/boss_pk_sgc_z3.dat','data/boss_pk_ngc_z1.dat','data/boss_pk_sgc_z1.dat']
+full_shape_spectra.AP_measurements = ['data/boss_alpha_ngc_z3.dat','data/boss_alpha_sgc_z3.dat','data/boss_alpha_ngc_z1.dat','data/boss_alpha_sgc_z1.dat']
+full_shape_spectra.B_measurements = ['data/bk_multi_ngcz3_data_ordered.dat','data/bk_multi_sgcz3_data_ordered.dat','data/bk_multi_ngcz1_data_ordered.dat','data/bk_multi_sgcz1_data_ordered.dat']
+
+# Joint covariance matrix
+full_shape_spectra.covmat_file = ['data/cov_closed_pqbb_ngcz3_multi.dat','data/cov_closed_pqbb_sgcz3_multi.dat','data/cov_closed_pqbb_ngcz1_multi.dat','data/cov_closed_pqbb_sgcz1_multi.dat']
+
+# Fiducial coordinates
+full_shape_spectra.h_fid = 0.676
+full_shape_spectra.DA_fid = [1486.9604106889594,1486.9604106889594,1108.8090636654,1108.8090636654]
+full_shape_spectra.Hz_fid = [91.39727080913846,91.39727080913846,82.9281,82.9281]
+
+# AP fiducial parameters
+full_shape_spectra.rdHfid = [0.046932401774762225,0.046932401774762225,0.040872046001833195,0.040872046001833195]
+full_shape_spectra.rdDAfid = [0.1031183538734282,0.1031183538734282,0.13325653008234437,0.13325653008234437]
+
+## Other power spectrum parameters
+# include integration in k-bins
+full_shape_spectra.bin_integration_P = True
+# lmax for P_l(k)
+full_shape_spectra.lmaxP = 4
+# kmin for P_l(k) [for each slice]
+full_shape_spectra.kminP = [0.01, 0.01, 0.01, 0.01]
+# kmax for P_l(k)
+full_shape_spectra.kmaxP = [0.20, 0.20, 0.20, 0.20]
+# kmax for Q0(k)
+full_shape_spectra.kmaxQ = [0.40, 0.40, 0.40, 0.40] 
+# whether to remove wiggles from linear power spectra
+full_shape_spectra.no_wiggle = False
+
+## Other bispectrum parameters
+full_shape_spectra.discreteness_weights_file = ['data/discreteness_ngcz3.dat','data/discreteness_sgcz3.dat','data/discreteness_ngcz1.dat','data/discreteness_sgcz1.dat']
+# lmax for B_l(k)
+full_shape_spectra.lmaxB = 4
+# kmin for B_l
+full_shape_spectra.kminB = [0.015, 0.015, 0.015, 0.015]
+# kmax for B_l
+full_shape_spectra.kmaxB = [0.075, 0.075, 0.075, 0.075]
+# delta-k (width of k bins) for Bl
+full_shape_spectra.dkB = [0.01,0.01,0.01,0.01]
+# Number of radial integration bins
+full_shape_spectra.n_gauss = 3
+# Number of angular integration bins
+full_shape_spectra.n_gauss2 = 8
+# Whether to include equilateral / orthogonal non-Gaussianity
+full_shape_spectra.use_eq_orth = False
+# Whether to include the cosmological collider Pk / Bk [this requires the parameters -- redshifts and interpolation file paths -- below]
+full_shape_spectra.use_collider = False
+# HDF5 file containing collider bispectrum shapes
+full_shape_spectra.collider_shapes = "/home/gcabass/collider_h5_files/3d_primordial_interpolation_data.h5"
+# HDF5 files containing interpolated power spectrum multipoles for collider
+full_shape_spectra.collider_pk_redshifts = [0.61, 0.38]
+full_shape_spectra.collider_pk_dotpi2   = ["/home/gcabass/collider_h5_files/multipoles_interpolation_data-dotpi2-z_061.h5","/home/gcabass/collider_h5_files/multipoles_interpolation_data-dotpi2-z_038.h5"]
+full_shape_spectra.collider_pk_nablapi2   = ["/home/gcabass/collider_h5_files/multipoles_interpolation_data-nablapi2-z_061.h5","/home/gcabass/collider_h5_files/multipoles_interpolation_data-nablapi2-z_038.h5"]
+
+##Kaz's bias relations default settings
+full_shape_spectra.bias_relations_varying = False
+full_shape_spectra.bias_relations_fixed = False
